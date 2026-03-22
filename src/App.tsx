@@ -28,25 +28,22 @@ function App() {
     invoke<boolean>("check_api_key").then(setHasApiKey).catch(() => setHasApiKey(false));
   }, []);
 
-  // Loading state
   if (hasApiKey === null) {
     return (
-      <div className="h-screen w-screen bg-neutral-950 flex items-center justify-center">
-        <div className="text-neutral-500 text-sm">Loading...</div>
+      <div className="h-screen w-screen bg-[#08080c] flex items-center justify-center">
+        <div className="w-5 h-5 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
       </div>
     );
   }
 
-  // Gate: no API key
   if (!hasApiKey) {
     return <ApiKeyGate onAuthenticated={() => setHasApiKey(true)} />;
   }
 
-  // Main app
   const Page = PAGES[currentPage] ?? Dashboard;
 
   return (
-    <div className="flex h-screen bg-neutral-950 text-white">
+    <div className="flex h-screen bg-[#08080c] text-white overflow-hidden">
       <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
       <main className="flex-1 overflow-auto">
         <Page />

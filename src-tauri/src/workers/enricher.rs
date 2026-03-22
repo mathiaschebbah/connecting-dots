@@ -2,7 +2,7 @@ use crate::db::Database;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
-const ENRICH_INTERVAL_SECS: u64 = 5;
+const ENRICH_INTERVAL_SECS: u64 = 15;
 const BATCH_SIZE: u32 = 20;
 
 pub async fn enrich_loop(db: Arc<Database>, api_key: String) {

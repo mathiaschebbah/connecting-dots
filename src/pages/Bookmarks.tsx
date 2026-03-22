@@ -34,7 +34,7 @@ export function Bookmarks() {
     setLoading(true);
     try {
       const command = searchMode === "semantic" ? "search_semantic" : "search_tweets";
-      const results = await invoke<Tweet[]>(command, { query: query.trim(), limit: 30, source: "bookmark" });
+      const results = await invoke<Tweet[]>(command, { query: query.trim(), limit: 50, source: "bookmark" });
       setTweets(results);
     } catch (err) {
       console.error("Search failed:", err);
@@ -48,37 +48,32 @@ export function Bookmarks() {
   }, []);
 
   return (
-    <div className="p-6 max-w-4xl">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-white">
-          Bookmarks
-          <span className="text-neutral-500 font-normal text-sm ml-2">
-            {total} tweets
-          </span>
-        </h2>
+    <div className="p-6 max-w-3xl mx-auto">
+      <div className="mb-6 flex items-baseline gap-3">
+        <h2 className="text-xl font-semibold text-white/90">Bookmarks</h2>
+        <span className="text-[13px] text-white/25 tabular-nums">{total}</span>
       </div>
 
-      {/* Search bar */}
+      {/* Search */}
       <form onSubmit={handleSearch} className="flex gap-2 mb-6">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={
-            searchMode === "semantic"
-              ? "Describe what you're looking for..."
-              : "Search tweets..."
-          }
-          className="flex-1 px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-lg text-white placeholder-neutral-600 text-sm focus:outline-none focus:border-neutral-600 transition-colors"
-        />
-        <div className="flex rounded-lg border border-neutral-800 overflow-hidden">
+        <div className="flex-1 relative">
+          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={searchMode === "semantic" ? "Describe what you're looking for..." : "Search tweets..."}
+            className="w-full pl-10 pr-4 py-2.5 bg-white/[0.04] border border-white/[0.06] rounded-xl text-[13px] text-white placeholder-white/20 focus:outline-none focus:border-violet-500/40 focus:bg-white/[0.06] transition-all"
+          />
+        </div>
+        <div className="flex rounded-xl border border-white/[0.06] overflow-hidden">
           <button
             type="button"
             onClick={() => setSearchMode("fulltext")}
-            className={`px-3 py-2.5 text-xs transition-colors ${
+            className={`px-3.5 py-2.5 text-[12px] font-medium transition-all ${
               searchMode === "fulltext"
-                ? "bg-neutral-800 text-white"
-                : "bg-neutral-900 text-neutral-500 hover:text-neutral-300"
+                ? "bg-white/[0.08] text-white"
+                : "text-white/25 hover:text-white/50"
             }`}
           >
             Exact
@@ -86,35 +81,26 @@ export function Bookmarks() {
           <button
             type="button"
             onClick={() => setSearchMode("semantic")}
-            className={`px-3 py-2.5 text-xs transition-colors ${
+            className={`px-3.5 py-2.5 text-[12px] font-medium transition-all ${
               searchMode === "semantic"
-                ? "bg-neutral-800 text-white"
-                : "bg-neutral-900 text-neutral-500 hover:text-neutral-300"
+                ? "bg-violet-500/20 text-violet-300"
+                : "text-white/25 hover:text-white/50"
             }`}
           >
             Semantic
           </button>
         </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="px-4 py-2.5 bg-white text-neutral-950 rounded-lg text-sm font-medium hover:bg-neutral-200 disabled:opacity-50 transition-colors"
-        >
-          Search
-        </button>
       </form>
 
       {/* Results */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         {loading ? (
-          <div className="text-sm text-neutral-600 py-8 text-center">
+          <div className="text-[13px] text-white/20 py-12 text-center">
             Searching...
           </div>
         ) : tweets.length === 0 ? (
-          <div className="text-sm text-neutral-600 py-8 text-center">
-            {query
-              ? "No results found."
-              : "No tweets yet. They'll appear here once the sync runs."}
+          <div className="text-[13px] text-white/20 py-12 text-center">
+            {query ? "No results." : "No bookmarks yet. They'll appear here once synced."}
           </div>
         ) : (
           tweets.map((tweet) => <TweetCard key={tweet.id} tweet={tweet} />)

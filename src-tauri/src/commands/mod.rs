@@ -186,6 +186,7 @@ pub struct GraphNodeOut {
     pub content_preview: String,
     pub category: Option<String>,
     pub summary: Option<String>,
+    pub topics: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -232,6 +233,7 @@ pub async fn get_network_graph(
             content_preview: n.content_preview,
             category: n.category,
             summary: n.summary,
+            topics: n.topics,
         })
         .collect();
 

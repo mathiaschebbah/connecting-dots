@@ -387,10 +387,10 @@ impl Database {
     ) -> Result<Vec<GraphNode>> {
         let conn = self.conn.lock().unwrap();
         let sql = if source_filter.is_some() {
-            "SELECT id, author_handle, author_name, substr(content, 1, 140), ai_category, ai_summary, embedding
+            "SELECT id, author_handle, author_name, substr(content, 1, 200), ai_category, ai_summary, embedding, ai_topics
              FROM tweets WHERE embedding IS NOT NULL AND source = ?2 LIMIT ?1"
         } else {
-            "SELECT id, author_handle, author_name, substr(content, 1, 140), ai_category, ai_summary, embedding
+            "SELECT id, author_handle, author_name, substr(content, 1, 200), ai_category, ai_summary, embedding, ai_topics
              FROM tweets WHERE embedding IS NOT NULL LIMIT ?1"
         };
         let mut stmt = conn.prepare(sql)?;
@@ -401,6 +401,10 @@ impl Database {
                 .chunks_exact(4)
                 .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 .collect();
+            let topics_raw: Option<String> = row.get(7)?;
+            let topics: Vec<String> = topics_raw
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
             Ok(GraphNode {
                 id: row.get(0)?,
                 author_handle: row.get(1)?,
@@ -408,6 +412,7 @@ impl Database {
                 content_preview: row.get(3)?,
                 category: row.get(4)?,
                 summary: row.get(5)?,
+                topics,
                 embedding,
             })
         };
@@ -448,6 +453,7 @@ pub struct GraphNode {
     pub content_preview: String,
     pub category: Option<String>,
     pub summary: Option<String>,
+    pub topics: Vec<String>,
     #[serde(skip)]
     pub embedding: Vec<f32>,
 }

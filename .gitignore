@@ -27,5 +27,8 @@ Thumbs.db
 # Tauri
 src-tauri/gen/
 
+# Model cache
+src-tauri/.fastembed_cache/
+
 SPEC.md
 CONCEPT.md
