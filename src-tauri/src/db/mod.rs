@@ -421,6 +421,69 @@ impl Database {
         }
     }
 
+    // ── Tags ──
+
+    /// Get all tags
+    pub fn list_tags(&self) -> Result<Vec<Tag>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, color FROM tags ORDER BY name")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Tag { id: row.get(0)?, name: row.get(1)?, color: row.get(2)? })
+        })?;
+        let mut tags = Vec::new();
+        for row in rows { tags.push(row?); }
+        Ok(tags)
+    }
+
+    /// Create a tag, returns its ID
+    pub fn create_tag(&self, name: &str, color: Option<&str>) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO tags (name, color) VALUES (?1, ?2)",
+            rusqlite::params![name, color],
+        )?;
+        let id: i64 = conn.query_row(
+            "SELECT id FROM tags WHERE name = ?1",
+            rusqlite::params![name],
+            |row| row.get(0),
+        )?;
+        Ok(id)
+    }
+
+    /// Assign a tag to a tweet
+    pub fn tag_tweet(&self, tweet_id: &str, tag_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO tweet_tags (tweet_id, tag_id) VALUES (?1, ?2)",
+            rusqlite::params![tweet_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a tag from a tweet
+    pub fn untag_tweet(&self, tweet_id: &str, tag_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM tweet_tags WHERE tweet_id = ?1 AND tag_id = ?2",
+            rusqlite::params![tweet_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get tags for a tweet
+    pub fn get_tweet_tags(&self, tweet_id: &str) -> Result<Vec<Tag>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.name, t.color FROM tags t JOIN tweet_tags tt ON t.id = tt.tag_id WHERE tt.tweet_id = ?1 ORDER BY t.name",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![tweet_id], |row| {
+            Ok(Tag { id: row.get(0)?, name: row.get(1)?, color: row.get(2)? })
+        })?;
+        let mut tags = Vec::new();
+        for row in rows { tags.push(row?); }
+        Ok(tags)
+    }
+
     /// Get tweets without AI metadata
     pub fn tweets_without_ai_metadata(&self, limit: u32) -> Result<Vec<(String, String)>> {
         let conn = self.conn.lock().unwrap();
@@ -534,6 +597,13 @@ pub struct GraphNode {
     pub topics: Vec<String>,
     #[serde(skip)]
     pub embedding: Vec<f32>,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct Tag {
+    pub id: i64,
+    pub name: String,
+    pub color: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, Clone)]

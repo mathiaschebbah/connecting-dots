@@ -1,9 +1,10 @@
-use crate::db::{cosine_similarity, TweetFull, TweetRow};
+use crate::agent::{self, AgentEvent, ChatMessage};
+use crate::db::{cosine_similarity, Tag, TweetFull, TweetRow};
 use crate::twitter::clix::Clix;
 use crate::workers;
 use crate::AppState;
 use serde::Serialize;
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct SyncResult {
@@ -176,6 +177,7 @@ pub async fn set_api_key(
 pub struct TweetDetailResult {
     pub tweet: TweetFull,
     pub similar: Vec<TweetRow>,
+    pub tags: Vec<Tag>,
 }
 
 #[tauri::command]
@@ -205,7 +207,81 @@ pub async fn get_tweet_detail(
         vec![]
     };
 
-    Ok(TweetDetailResult { tweet, similar })
+    let tags = state.db.get_tweet_tags(&tweet_id).unwrap_or_default();
+
+    Ok(TweetDetailResult { tweet, similar, tags })
+}
+
+#[tauri::command]
+pub async fn list_tags(state: State<'_, AppState>) -> Result<Vec<Tag>, String> {
+    state.db.list_tags().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_and_assign_tag(
+    state: State<'_, AppState>,
+    tweet_id: String,
+    tag_name: String,
+    color: Option<String>,
+) -> Result<Tag, String> {
+    let tag_id = state
+        .db
+        .create_tag(&tag_name, color.as_deref())
+        .map_err(|e| e.to_string())?;
+    state
+        .db
+        .tag_tweet(&tweet_id, tag_id)
+        .map_err(|e| e.to_string())?;
+    Ok(Tag {
+        id: tag_id,
+        name: tag_name,
+        color,
+    })
+}
+
+#[tauri::command]
+pub async fn remove_tag_from_tweet(
+    state: State<'_, AppState>,
+    tweet_id: String,
+    tag_id: i64,
+) -> Result<bool, String> {
+    state
+        .db
+        .untag_tweet(&tweet_id, tag_id)
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn send_agent_message(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    message: String,
+    history: Vec<ChatMessage>,
+) -> Result<bool, String> {
+    let api_key = {
+        let config = state.config.lock().unwrap();
+        config.api_key().map(String::from).ok_or("No API key")?
+    };
+
+    let db = state.db.clone();
+    let embedder = state.embedder.clone();
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(100);
+
+    // Spawn agent in background
+    tauri::async_runtime::spawn(async move {
+        agent::run_agent(db, embedder, api_key, message, history, tx).await;
+    });
+
+    // Forward events to frontend
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            let _ = app.emit("agent:event", &event);
+        }
+    });
+
+    Ok(true)
 }
 
 #[derive(Debug, Serialize, Clone)]

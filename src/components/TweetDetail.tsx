@@ -47,9 +47,16 @@ interface SimilarTweet {
   source: string;
 }
 
+interface TagData {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
 interface TweetDetailResult {
   tweet: TweetFull;
   similar: SimilarTweet[];
+  tags: TagData[];
 }
 
 function fmt(n: number): string {
@@ -85,14 +92,37 @@ interface Props {
 export function TweetDetail({ tweetId, onClose, onNavigate }: Props) {
   const [data, setData] = useState<TweetDetailResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [newTag, setNewTag] = useState("");
 
-  useEffect(() => {
+  const loadDetail = () => {
     setLoading(true);
     invoke<TweetDetailResult>("get_tweet_detail", { tweetId })
       .then(setData)
       .catch((e) => console.error("Failed to load tweet:", e))
       .finally(() => setLoading(false));
-  }, [tweetId]);
+  };
+
+  useEffect(() => { loadDetail(); }, [tweetId]);
+
+  const addTag = async () => {
+    if (!newTag.trim()) return;
+    try {
+      await invoke("create_and_assign_tag", { tweetId, tagName: newTag.trim(), color: null });
+      setNewTag("");
+      loadDetail();
+    } catch (e) {
+      console.error("Failed to add tag:", e);
+    }
+  };
+
+  const removeTag = async (tagId: number) => {
+    try {
+      await invoke("remove_tag_from_tweet", { tweetId, tagId });
+      loadDetail();
+    } catch (e) {
+      console.error("Failed to remove tag:", e);
+    }
+  };
 
   if (loading) {
     return (
@@ -209,6 +239,46 @@ export function TweetDetail({ tweetId, onClose, onNavigate }: Props) {
             )}
           </div>
         )}
+
+        {/* Tags */}
+        <div className="mb-4">
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {data.tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20"
+              >
+                {tag.name}
+                <button
+                  onClick={() => removeTag(tag.id)}
+                  className="text-violet-300/40 hover:text-violet-300 ml-0.5 transition-colors"
+                >
+                  x
+                </button>
+              </span>
+            ))}
+          </div>
+          <form
+            onSubmit={(e) => { e.preventDefault(); addTag(); }}
+            className="flex gap-1.5"
+          >
+            <input
+              type="text"
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              placeholder="Add tag..."
+              className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[11px] text-white placeholder-white/15 focus:outline-none focus:border-violet-500/30 transition-all"
+            />
+            {newTag.trim() && (
+              <button
+                type="submit"
+                className="px-3 py-1.5 bg-violet-500/20 text-violet-300 rounded-lg text-[11px] hover:bg-violet-500/30 transition-colors"
+              >
+                Add
+              </button>
+            )}
+          </form>
+        </div>
 
         {/* Reply info */}
         {tweet.reply_to_handle && (

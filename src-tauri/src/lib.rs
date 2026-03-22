@@ -79,6 +79,10 @@ pub fn run() {
             commands::check_api_key,
             commands::set_api_key,
             commands::get_tweet_detail,
+            commands::list_tags,
+            commands::create_and_assign_tag,
+            commands::remove_tag_from_tweet,
+            commands::send_agent_message,
             commands::get_network_graph,
         ])
         .run(tauri::generate_context!())
