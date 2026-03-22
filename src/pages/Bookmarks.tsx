@@ -14,10 +14,9 @@ export function Bookmarks() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const results = await invoke<Tweet[]>("list_tweets", { limit: 50, offset: 0 });
+      const results = await invoke<Tweet[]>("list_tweets", { limit: 50, offset: 0, source: "bookmark" });
       setTweets(results);
-      const count = await invoke<number>("get_tweet_count");
-      setTotal(count);
+      setTotal(results.length);
     } catch (err) {
       console.error("Failed to load tweets:", err);
     } finally {

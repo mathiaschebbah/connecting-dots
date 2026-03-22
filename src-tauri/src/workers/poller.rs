@@ -2,7 +2,6 @@ use crate::db::Database;
 use crate::embeddings::Embedder;
 use crate::twitter::clix::Clix;
 use std::sync::Arc;
-use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
 
 #[derive(Clone)]
@@ -17,27 +16,19 @@ pub struct PollConfig {
     pub interval_secs: u64,
 }
 
-pub async fn poll_loop(
-    db: Arc<Database>,
-    embedder: Arc<Embedder>,
-    mut shutdown: watch::Receiver<bool>,
-    config: PollConfig,
-) {
+pub async fn poll_loop(db: Arc<Database>, embedder: Arc<Embedder>, config: PollConfig) {
     let source_name = match config.source {
         PollSource::Bookmarks => "bookmarks",
         PollSource::Feed => "feed",
     };
 
-    log::info!("Worker started: poll {} every {}s", source_name, config.interval_secs);
+    log::info!(
+        "Worker started: poll {} every {}s",
+        source_name,
+        config.interval_secs
+    );
 
     loop {
-        // Check shutdown
-        if *shutdown.borrow() {
-            log::info!("Worker {} shutting down", source_name);
-            return;
-        }
-
-        // Poll
         match poll_once(&db, &embedder, &config.source).await {
             Ok((new, embedded)) => {
                 if new > 0 {
@@ -49,14 +40,7 @@ pub async fn poll_loop(
             }
         }
 
-        // Wait for next poll or shutdown
-        tokio::select! {
-            _ = sleep(Duration::from_secs(config.interval_secs)) => {},
-            _ = shutdown.changed() => {
-                log::info!("Worker {} shutting down", source_name);
-                return;
-            }
-        }
+        sleep(Duration::from_secs(config.interval_secs)).await;
     }
 }
 
@@ -92,8 +76,11 @@ async fn poll_once(
         let texts: Vec<String> = pending.iter().map(|(_, content)| content.clone()).collect();
         let embeddings = embedder.embed_batch(&texts)?;
         for ((tweet_id, _), embedding) in pending.iter().zip(embeddings.iter()) {
-            db.store_embedding(tweet_id, embedding)?;
-            embedded_count += 1;
+            if let Err(e) = db.store_embedding(tweet_id, embedding) {
+                log::warn!("Failed to store embedding for {}: {}", tweet_id, e);
+            } else {
+                embedded_count += 1;
+            }
         }
     }
 

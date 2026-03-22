@@ -137,6 +137,7 @@ impl Clix {
     pub fn feed(&self, feed_type: &str, count: u32) -> Result<Vec<ClixTweet>> {
         let raw = self.run(&[
             "feed",
+            "--type",
             feed_type,
             "--json",
             "--count",

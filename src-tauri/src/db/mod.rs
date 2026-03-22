@@ -35,6 +35,7 @@ impl Database {
         let schema = include_str!("schema.sql");
         conn.execute_batch(schema)?;
 
+
         // Vector index (sqlite-vec, created at runtime)
         conn.execute_batch(&format!(
             "CREATE VIRTUAL TABLE IF NOT EXISTS tweets_vec USING vec0(
@@ -128,9 +129,12 @@ impl Database {
     pub fn store_embedding(&self, tweet_id: &str, embedding: &[f32]) -> Result<()> {
         let conn = self.conn.lock().unwrap();
 
+        // Delete existing entry first (vec0 tables don't support OR REPLACE)
+        let _ = conn.execute("DELETE FROM tweets_vec WHERE tweet_id = ?1", rusqlite::params![tweet_id]);
+
         // Store in sqlite-vec virtual table
         conn.execute(
-            "INSERT OR REPLACE INTO tweets_vec (tweet_id, embedding) VALUES (?1, ?2)",
+            "INSERT INTO tweets_vec (tweet_id, embedding) VALUES (?1, ?2)",
             rusqlite::params![tweet_id, f32_slice_to_bytes(embedding)],
         )?;
 
@@ -207,16 +211,28 @@ impl Database {
         Ok(count)
     }
 
-    /// Get all tweets ordered by created_at desc
-    pub fn list_tweets(&self, limit: u32, offset: u32) -> Result<Vec<TweetRow>> {
+    /// Get tweets ordered by created_at desc, optionally filtered by source
+    pub fn list_tweets(
+        &self,
+        limit: u32,
+        offset: u32,
+        source_filter: Option<&str>,
+    ) -> Result<Vec<TweetRow>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
+
+        let query = if source_filter.is_some() {
             "SELECT id, author_handle, author_name, content, created_at,
                     tweet_url, likes, retweets, replies_count, views, source
-             FROM tweets ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
-        )?;
+             FROM tweets WHERE source = ?3 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
+        } else {
+            "SELECT id, author_handle, author_name, content, created_at,
+                    tweet_url, likes, retweets, replies_count, views, source
+             FROM tweets ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
+        };
 
-        let rows = stmt.query_map(rusqlite::params![limit, offset], |row| {
+        let mut stmt = conn.prepare(query)?;
+
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<TweetRow> {
             Ok(TweetRow {
                 id: row.get(0)?,
                 author_handle: row.get(1)?,
@@ -230,11 +246,15 @@ impl Database {
                 views: row.get(9)?,
                 source: row.get(10)?,
             })
-        })?;
+        };
 
         let mut tweets = Vec::new();
-        for row in rows {
-            tweets.push(row?);
+        if let Some(src) = source_filter {
+            let rows = stmt.query_map(rusqlite::params![limit, offset, src], map_row)?;
+            for row in rows { tweets.push(row?); }
+        } else {
+            let rows = stmt.query_map(rusqlite::params![limit, offset], map_row)?;
+            for row in rows { tweets.push(row?); }
         }
         Ok(tweets)
     }

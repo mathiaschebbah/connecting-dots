@@ -47,10 +47,15 @@ pub async fn list_tweets(
     state: State<'_, AppState>,
     limit: Option<u32>,
     offset: Option<u32>,
+    source: Option<String>,
 ) -> Result<Vec<TweetRow>, String> {
     state
         .db
-        .list_tweets(limit.unwrap_or(50), offset.unwrap_or(0))
+        .list_tweets(
+            limit.unwrap_or(50),
+            offset.unwrap_or(0),
+            source.as_deref(),
+        )
         .map_err(|e| e.to_string())
 }
 

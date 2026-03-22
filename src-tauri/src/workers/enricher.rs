@@ -1,26 +1,19 @@
 use crate::db::Database;
 use std::sync::Arc;
-use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
 
 const ENRICH_INTERVAL_SECS: u64 = 30;
 const BATCH_SIZE: u32 = 10;
 
-pub async fn enrich_loop(
-    db: Arc<Database>,
-    api_key: String,
-    mut shutdown: watch::Receiver<bool>,
-) {
-    log::info!("Worker started: AI enrichment every {}s", ENRICH_INTERVAL_SECS);
+pub async fn enrich_loop(db: Arc<Database>, api_key: String) {
+    log::info!(
+        "Worker started: AI enrichment every {}s",
+        ENRICH_INTERVAL_SECS
+    );
 
     let client = reqwest::Client::new();
 
     loop {
-        if *shutdown.borrow() {
-            log::info!("Worker enricher shutting down");
-            return;
-        }
-
         match enrich_batch(&db, &client, &api_key).await {
             Ok(count) => {
                 if count > 0 {
@@ -32,13 +25,7 @@ pub async fn enrich_loop(
             }
         }
 
-        tokio::select! {
-            _ = sleep(Duration::from_secs(ENRICH_INTERVAL_SECS)) => {},
-            _ = shutdown.changed() => {
-                log::info!("Worker enricher shutting down");
-                return;
-            }
-        }
+        sleep(Duration::from_secs(ENRICH_INTERVAL_SECS)).await;
     }
 }
 
@@ -93,13 +80,11 @@ Respond ONLY with the JSON array, no markdown fences, no explanation."#;
     }
 
     let resp: serde_json::Value = response.json().await?;
-    let content_text = resp["content"][0]["text"]
-        .as_str()
-        .unwrap_or("[]");
+    let content_text = resp["content"][0]["text"].as_str().unwrap_or("[]");
 
     // Parse the JSON array response
-    let enrichments: Vec<TweetEnrichment> = serde_json::from_str(content_text)
-        .unwrap_or_default();
+    let enrichments: Vec<TweetEnrichment> =
+        serde_json::from_str(content_text).unwrap_or_default();
 
     let mut count = 0u32;
     for enrichment in &enrichments {
