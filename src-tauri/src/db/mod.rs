@@ -274,6 +274,42 @@ impl Database {
         }
         Ok(tweets)
     }
+
+    // ── AI Metadata ──
+
+    /// Get tweets without AI metadata
+    pub fn tweets_without_ai_metadata(&self, limit: u32) -> Result<Vec<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, content FROM tweets WHERE ai_enriched_at IS NULL LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![limit], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Update AI metadata for a tweet
+    pub fn update_ai_metadata(
+        &self,
+        tweet_id: &str,
+        category: &str,
+        summary: &str,
+        topics: &str,
+        tweet_type: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE tweets SET ai_category = ?1, ai_summary = ?2, ai_topics = ?3, ai_type = ?4, ai_enriched_at = ?5 WHERE id = ?6",
+            rusqlite::params![category, summary, topics, tweet_type, now, tweet_id],
+        )?;
+        Ok(())
+    }
 }
 
 /// Convert &[f32] to &[u8] for sqlite-vec

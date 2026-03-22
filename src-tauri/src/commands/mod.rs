@@ -1,5 +1,7 @@
+use crate::config::AppConfig;
 use crate::db::TweetRow;
 use crate::twitter::clix::Clix;
+use crate::workers;
 use crate::AppState;
 use serde::Serialize;
 use tauri::State;
@@ -133,4 +135,34 @@ pub async fn embed_pending(state: State<'_, AppState>) -> Result<EmbedResult, St
         embedded_count: count,
         remaining,
     })
+}
+
+#[tauri::command]
+pub async fn check_api_key(state: State<'_, AppState>) -> Result<bool, String> {
+    let config = state.config.lock().unwrap();
+    Ok(config.has_api_key())
+}
+
+#[tauri::command]
+pub async fn set_api_key(
+    state: State<'_, AppState>,
+    api_key: String,
+) -> Result<bool, String> {
+    // Save to config
+    {
+        let mut config = state.config.lock().unwrap();
+        config.anthropic_api_key = Some(api_key.clone());
+        config.save(&state.app_dir).map_err(|e| e.to_string())?;
+    }
+
+    // Start workers now that we have a key
+    workers::start_all(
+        state.db.clone(),
+        state.embedder.clone(),
+        Some(api_key),
+    );
+
+    log::info!("API key set, workers started");
+
+    Ok(true)
 }

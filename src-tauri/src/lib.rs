@@ -1,18 +1,22 @@
 mod agent;
 mod commands;
+mod config;
 mod db;
 mod embeddings;
 mod twitter;
 mod workers;
 
+use config::AppConfig;
 use db::Database;
 use embeddings::Embedder;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 pub struct AppState {
     pub db: Arc<Database>,
     pub embedder: Arc<Embedder>,
+    pub config: Arc<Mutex<AppConfig>>,
+    pub app_dir: std::path::PathBuf,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -27,21 +31,39 @@ pub fn run() {
                 )?;
             }
 
-            // Initialize database
+            // App data directory
             let app_dir = app
                 .path()
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
             std::fs::create_dir_all(&app_dir)?;
+
+            // Load config
+            let config = AppConfig::load(&app_dir).unwrap_or_default();
+
+            // Initialize database
             let db_path = app_dir.join("connecting-dots.db");
             let db = Database::open(&db_path).expect("failed to open database");
+            let db = Arc::new(db);
 
             // Initialize embedder (downloads model on first run)
             let embedder = Embedder::new().expect("failed to initialize embedding model");
+            let embedder = Arc::new(embedder);
+
+            // Start background workers if API key is configured
+            if config.has_api_key() {
+                workers::start_all(
+                    db.clone(),
+                    embedder.clone(),
+                    config.api_key().map(String::from),
+                );
+            }
 
             app.manage(AppState {
-                db: Arc::new(db),
-                embedder: Arc::new(embedder),
+                db,
+                embedder,
+                config: Arc::new(Mutex::new(config)),
+                app_dir: app_dir.clone(),
             });
 
             log::info!("Connecting Dots started. DB at {:?}", db_path);
@@ -56,6 +78,8 @@ pub fn run() {
             commands::search_semantic,
             commands::get_tweet_count,
             commands::embed_pending,
+            commands::check_api_key,
+            commands::set_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
