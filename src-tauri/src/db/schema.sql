@@ -1,14 +1,38 @@
 -- Tweets
 CREATE TABLE IF NOT EXISTS tweets (
     id TEXT PRIMARY KEY,
+    author_id TEXT,
     author_handle TEXT NOT NULL,
     author_name TEXT,
+    author_verified INTEGER DEFAULT 0,
     content TEXT NOT NULL,
-    media_urls TEXT,
-    bookmarked_at TEXT,
+    created_at TEXT,
+    conversation_id TEXT,
+    language TEXT,
+    tweet_url TEXT,
+    reply_to_id TEXT,
+    reply_to_handle TEXT,
+    is_retweet INTEGER DEFAULT 0,
+    retweeted_by TEXT,
+    media_json TEXT,
+    quoted_tweet_json TEXT,
+    likes INTEGER DEFAULT 0,
+    retweets INTEGER DEFAULT 0,
+    replies_count INTEGER DEFAULT 0,
+    quotes INTEGER DEFAULT 0,
+    bookmarks_count INTEGER DEFAULT 0,
+    views INTEGER DEFAULT 0,
+    source TEXT DEFAULT 'bookmark',
     fetched_at TEXT NOT NULL,
     raw_json TEXT,
-    embedding BLOB
+    -- Embedding (phase 1: local, fastembed-rs)
+    embedding BLOB,
+    -- AI metadata (phase 2: Claude API, async)
+    ai_category TEXT,
+    ai_summary TEXT,
+    ai_topics TEXT,
+    ai_type TEXT,
+    ai_enriched_at TEXT
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS tweets_fts USING fts5(
