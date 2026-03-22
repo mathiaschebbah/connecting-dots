@@ -2,8 +2,8 @@ use crate::db::Database;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
-const ENRICH_INTERVAL_SECS: u64 = 30;
-const BATCH_SIZE: u32 = 10;
+const ENRICH_INTERVAL_SECS: u64 = 5;
+const BATCH_SIZE: u32 = 20;
 
 pub async fn enrich_loop(db: Arc<Database>, api_key: String) {
     log::info!(
@@ -35,6 +35,7 @@ async fn enrich_batch(
     api_key: &str,
 ) -> anyhow::Result<u32> {
     let pending = db.tweets_without_ai_metadata(BATCH_SIZE)?;
+    log::info!("[enricher] found {} tweets to enrich", pending.len());
     if pending.is_empty() {
         return Ok(0);
     }
@@ -56,7 +57,7 @@ Respond ONLY with the JSON array, no markdown fences, no explanation."#;
 
     let body = serde_json::json!({
         "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         "system": system_prompt,
         "messages": [{
             "role": "user",
@@ -82,9 +83,26 @@ Respond ONLY with the JSON array, no markdown fences, no explanation."#;
     let resp: serde_json::Value = response.json().await?;
     let content_text = resp["content"][0]["text"].as_str().unwrap_or("[]");
 
+    // Strip markdown code fences if present
+    let mut clean = content_text.trim().to_string();
+    if clean.starts_with("```") {
+        if let Some(pos) = clean.find('\n') {
+            clean = clean[pos + 1..].to_string();
+        }
+    }
+    if clean.ends_with("```") {
+        clean = clean[..clean.len() - 3].to_string();
+    }
+    let clean_text = clean.trim();
+
     // Parse the JSON array response
-    let enrichments: Vec<TweetEnrichment> =
-        serde_json::from_str(content_text).unwrap_or_default();
+    let enrichments: Vec<TweetEnrichment> = match serde_json::from_str(clean_text) {
+        Ok(v) => v,
+        Err(e) => {
+            log::error!("[enricher] Failed to parse response: {}", e);
+            vec![]
+        }
+    };
 
     let mut count = 0u32;
     for enrichment in &enrichments {

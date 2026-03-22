@@ -1,5 +1,4 @@
-use crate::config::AppConfig;
-use crate::db::TweetRow;
+use crate::db::{cosine_similarity, TweetRow};
 use crate::twitter::clix::Clix;
 use crate::workers;
 use crate::AppState;
@@ -171,4 +170,73 @@ pub async fn set_api_key(
     log::info!("API key set, workers started");
 
     Ok(true)
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct GraphData {
+    pub nodes: Vec<GraphNodeOut>,
+    pub links: Vec<GraphLink>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct GraphNodeOut {
+    pub id: String,
+    pub author_handle: String,
+    pub author_name: Option<String>,
+    pub content_preview: String,
+    pub category: Option<String>,
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct GraphLink {
+    pub source: String,
+    pub target: String,
+    pub similarity: f32,
+}
+
+#[tauri::command]
+pub async fn get_network_graph(
+    state: State<'_, AppState>,
+    source: Option<String>,
+    similarity_threshold: Option<f32>,
+    limit: Option<u32>,
+) -> Result<GraphData, String> {
+    let threshold = similarity_threshold.unwrap_or(0.65);
+    let nodes = state
+        .db
+        .get_graph_nodes(source.as_deref(), limit.unwrap_or(200))
+        .map_err(|e| e.to_string())?;
+
+    // Compute edges: cosine similarity between all pairs above threshold
+    let mut links = Vec::new();
+    for i in 0..nodes.len() {
+        for j in (i + 1)..nodes.len() {
+            let sim = cosine_similarity(&nodes[i].embedding, &nodes[j].embedding);
+            if sim >= threshold {
+                links.push(GraphLink {
+                    source: nodes[i].id.clone(),
+                    target: nodes[j].id.clone(),
+                    similarity: sim,
+                });
+            }
+        }
+    }
+
+    let graph_nodes: Vec<GraphNodeOut> = nodes
+        .into_iter()
+        .map(|n| GraphNodeOut {
+            id: n.id,
+            author_handle: n.author_handle,
+            author_name: n.author_name,
+            content_preview: n.content_preview,
+            category: n.category,
+            summary: n.summary,
+        })
+        .collect();
+
+    Ok(GraphData {
+        nodes: graph_nodes,
+        links,
+    })
 }

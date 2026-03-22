@@ -347,7 +347,7 @@ impl Database {
     pub fn tweets_without_ai_metadata(&self, limit: u32) -> Result<Vec<(String, String)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, content FROM tweets WHERE ai_enriched_at IS NULL LIMIT ?1",
+            "SELECT id, content FROM tweets WHERE ai_enriched_at IS NULL ORDER BY CASE WHEN source = 'bookmark' THEN 0 ELSE 1 END LIMIT ?1",
         )?;
         let rows = stmt.query_map(rusqlite::params![limit], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -376,11 +376,80 @@ impl Database {
         )?;
         Ok(())
     }
+
+    // ── Network Graph ──
+
+    /// Get tweets with embeddings for the network graph
+    pub fn get_graph_nodes(
+        &self,
+        source_filter: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<GraphNode>> {
+        let conn = self.conn.lock().unwrap();
+        let sql = if source_filter.is_some() {
+            "SELECT id, author_handle, author_name, substr(content, 1, 140), ai_category, ai_summary, embedding
+             FROM tweets WHERE embedding IS NOT NULL AND source = ?2 LIMIT ?1"
+        } else {
+            "SELECT id, author_handle, author_name, substr(content, 1, 140), ai_category, ai_summary, embedding
+             FROM tweets WHERE embedding IS NOT NULL LIMIT ?1"
+        };
+        let mut stmt = conn.prepare(sql)?;
+
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<GraphNode> {
+            let embedding_blob: Vec<u8> = row.get(6)?;
+            let embedding: Vec<f32> = embedding_blob
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            Ok(GraphNode {
+                id: row.get(0)?,
+                author_handle: row.get(1)?,
+                author_name: row.get(2)?,
+                content_preview: row.get(3)?,
+                category: row.get(4)?,
+                summary: row.get(5)?,
+                embedding,
+            })
+        };
+
+        let mut nodes = Vec::new();
+        if let Some(src) = source_filter {
+            let rows = stmt.query_map(rusqlite::params![limit, src], map_row)?;
+            for row in rows { nodes.push(row?); }
+        } else {
+            let rows = stmt.query_map(rusqlite::params![limit], map_row)?;
+            for row in rows { nodes.push(row?); }
+        }
+        Ok(nodes)
+    }
+}
+
+/// Compute cosine similarity between two vectors
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 0.0;
+    }
+    dot / (norm_a * norm_b)
 }
 
 /// Convert &[f32] to &[u8] for sqlite-vec
 fn f32_slice_to_bytes(floats: &[f32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(floats.as_ptr() as *const u8, floats.len() * 4) }
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct GraphNode {
+    pub id: String,
+    pub author_handle: String,
+    pub author_name: Option<String>,
+    pub content_preview: String,
+    pub category: Option<String>,
+    pub summary: Option<String>,
+    #[serde(skip)]
+    pub embedding: Vec<f32>,
 }
 
 #[derive(Debug, serde::Serialize, Clone)]
