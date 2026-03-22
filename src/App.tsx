@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Sidebar } from "./components/Sidebar";
+import { ApiKeyGate } from "./pages/ApiKeyGate";
 import { Dashboard } from "./pages/Dashboard";
 import { Bookmarks } from "./pages/Bookmarks";
 import { Kanban } from "./pages/Kanban";
@@ -19,7 +21,28 @@ const PAGES: Record<string, React.FC> = {
 };
 
 function App() {
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [currentPage, setCurrentPage] = useState("dashboard");
+
+  useEffect(() => {
+    invoke<boolean>("check_api_key").then(setHasApiKey).catch(() => setHasApiKey(false));
+  }, []);
+
+  // Loading state
+  if (hasApiKey === null) {
+    return (
+      <div className="h-screen w-screen bg-neutral-950 flex items-center justify-center">
+        <div className="text-neutral-500 text-sm">Loading...</div>
+      </div>
+    );
+  }
+
+  // Gate: no API key
+  if (!hasApiKey) {
+    return <ApiKeyGate onAuthenticated={() => setHasApiKey(true)} />;
+  }
+
+  // Main app
   const Page = PAGES[currentPage] ?? Dashboard;
 
   return (
