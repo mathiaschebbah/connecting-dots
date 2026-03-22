@@ -1,4 +1,4 @@
--- Tweets
+-- Bookmarks
 CREATE TABLE IF NOT EXISTS tweets (
     id TEXT PRIMARY KEY,
     author_id TEXT,
@@ -26,28 +26,25 @@ CREATE TABLE IF NOT EXISTS tweets (
     bookmark_order INTEGER,
     fetched_at TEXT NOT NULL,
     raw_json TEXT,
-    -- Embedding (phase 1: local, fastembed-rs)
     embedding BLOB,
-    -- AI metadata (phase 2: Claude API, async)
     ai_category TEXT,
     ai_cluster TEXT,
     ai_summary TEXT,
     ai_topics TEXT,
     ai_type TEXT,
     ai_enriched_at TEXT,
-    -- Resolved link content (for tweets that are just a link to another tweet/article)
     resolved_content TEXT,
     resolved_author TEXT,
     resolved_url TEXT
 );
 
+-- Full-text search
 CREATE VIRTUAL TABLE IF NOT EXISTS tweets_fts USING fts5(
     content, author_handle, author_name,
     content='tweets',
     content_rowid='rowid'
 );
 
--- Triggers to keep FTS in sync (uses COALESCE to index resolved_content when available)
 CREATE TRIGGER IF NOT EXISTS tweets_ai AFTER INSERT ON tweets BEGIN
     INSERT INTO tweets_fts(rowid, content, author_handle, author_name)
     VALUES (new.rowid, COALESCE(new.resolved_content, new.content), new.author_handle, new.author_name);
@@ -65,75 +62,24 @@ CREATE TRIGGER IF NOT EXISTS tweets_au AFTER UPDATE ON tweets BEGIN
     VALUES (new.rowid, COALESCE(new.resolved_content, new.content), new.author_handle, new.author_name);
 END;
 
--- Tweet interactions
-CREATE TABLE IF NOT EXISTS tweet_replies (
-    tweet_id TEXT REFERENCES tweets(id),
-    reply_id TEXT,
-    author_handle TEXT,
-    content TEXT,
-    created_at TEXT,
-    fetched_at TEXT NOT NULL,
-    PRIMARY KEY (tweet_id, reply_id)
-);
-
-CREATE TABLE IF NOT EXISTS tweet_quotes (
-    tweet_id TEXT REFERENCES tweets(id),
-    quote_id TEXT,
-    author_handle TEXT,
-    content TEXT,
-    created_at TEXT,
-    fetched_at TEXT NOT NULL,
-    PRIMARY KEY (tweet_id, quote_id)
-);
-
-CREATE TABLE IF NOT EXISTS tweet_metrics (
-    tweet_id TEXT REFERENCES tweets(id),
-    likes INTEGER,
-    retweets INTEGER,
-    replies INTEGER,
-    views INTEGER,
-    recorded_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tweet_notes (
-    id INTEGER PRIMARY KEY,
-    tweet_id TEXT REFERENCES tweets(id),
-    content TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tweet_links (
-    source_id TEXT REFERENCES tweets(id),
-    target_id TEXT REFERENCES tweets(id),
-    link_type TEXT DEFAULT 'related',
-    strength REAL DEFAULT 1.0,
-    PRIMARY KEY (source_id, target_id)
-);
-
--- Organization
-CREATE TABLE IF NOT EXISTS projects (
+-- Dots (nested topic clusters)
+CREATE TABLE IF NOT EXISTS dots (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    parent_id INTEGER REFERENCES dots(id),
     description TEXT,
     color TEXT,
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS groups (
-    id INTEGER PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(id),
-    name TEXT NOT NULL,
-    description TEXT,
-    color TEXT
-);
-
-CREATE TABLE IF NOT EXISTS tweet_groups (
+CREATE TABLE IF NOT EXISTS tweet_dots (
     tweet_id TEXT REFERENCES tweets(id),
-    group_id INTEGER REFERENCES groups(id),
-    PRIMARY KEY (tweet_id, group_id)
+    dot_id INTEGER REFERENCES dots(id),
+    PRIMARY KEY (tweet_id, dot_id)
 );
 
+-- Tags
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
@@ -146,55 +92,11 @@ CREATE TABLE IF NOT EXISTS tweet_tags (
     PRIMARY KEY (tweet_id, tag_id)
 );
 
--- Kanban
-CREATE TABLE IF NOT EXISTS kanban_columns (
+-- Notes
+CREATE TABLE IF NOT EXISTS tweet_notes (
     id INTEGER PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(id),
-    name TEXT NOT NULL,
-    position INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS kanban_cards (
-    id INTEGER PRIMARY KEY,
-    column_id INTEGER REFERENCES kanban_columns(id),
     tweet_id TEXT REFERENCES tweets(id),
-    note TEXT,
-    position INTEGER NOT NULL
-);
-
--- Pinned accounts
-CREATE TABLE IF NOT EXISTS pinned_accounts (
-    handle TEXT PRIMARY KEY,
-    display_name TEXT,
-    bio TEXT,
-    avatar_url TEXT,
-    pinned_since TEXT NOT NULL,
-    poll_interval_secs INTEGER DEFAULT 300,
-    last_polled_at TEXT,
-    notes TEXT
-);
-
-CREATE TABLE IF NOT EXISTS project_accounts (
-    project_id INTEGER REFERENCES projects(id),
-    account_handle TEXT REFERENCES pinned_accounts(handle),
-    PRIMARY KEY (project_id, account_handle)
-);
-
-CREATE TABLE IF NOT EXISTS account_interactions (
-    source_handle TEXT,
-    target_handle TEXT,
-    interaction_type TEXT,
-    count INTEGER DEFAULT 1,
-    last_seen_at TEXT,
-    PRIMARY KEY (source_handle, target_handle, interaction_type)
-);
-
--- Monitored topics (agent-created recurring searches)
-CREATE TABLE IF NOT EXISTS monitored_topics (
-    id INTEGER PRIMARY KEY,
-    query TEXT NOT NULL,
+    content TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    last_polled_at TEXT,
-    poll_interval_secs INTEGER DEFAULT 300,
-    is_active INTEGER DEFAULT 1
+    updated_at TEXT NOT NULL
 );

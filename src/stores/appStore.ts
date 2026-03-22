@@ -1,54 +1,47 @@
 import { create } from "zustand";
 
-export type Lens = "river" | "clusters" | "graph" | "boards" | "agent" | "pinned";
-
-export interface FocusItem {
-  type: "tweet" | "author" | "topic";
-  id: string;
-}
+export type Page =
+  | { type: "dots" }
+  | { type: "dot"; slug: string }
+  | { type: "tweet"; id: string; fromDot?: string }
+  | { type: "agent" };
 
 interface AppState {
-  lens: Lens;
-  setLens: (lens: Lens) => void;
-
-  activeCategory: string | null;
-  setActiveCategory: (cat: string | null) => void;
-
-  activeCluster: string | null;
-  setActiveCluster: (cluster: string | null) => void;
-  navigateToCluster: (cluster: string) => void;
-
-  focusStack: FocusItem[];
-  pushFocus: (item: FocusItem) => void;
-  popFocus: () => void;
-  clearFocus: () => void;
+  page: Page;
+  navigate: (page: Page) => void;
+  back: () => void;
+  history: Page[];
 
   searchOpen: boolean;
   setSearchOpen: (open: boolean) => void;
+
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  lens: "river",
-  setLens: (lens) => set({ lens }),
+  page: { type: "dots" },
+  history: [],
 
-  activeCategory: null,
-  setActiveCategory: (activeCategory) => set({ activeCategory }),
+  navigate: (page) =>
+    set((s) => ({
+      history: [...s.history, s.page],
+      page,
+    })),
 
-  activeCluster: null,
-  setActiveCluster: (activeCluster) => set({ activeCluster }),
-  navigateToCluster: (cluster) => set({ lens: "graph", activeCluster: cluster }),
-
-  focusStack: [],
-  pushFocus: (item) =>
+  back: () =>
     set((s) => {
-      const last = s.focusStack[s.focusStack.length - 1];
-      if (last?.type === item.type && last?.id === item.id) return s;
-      return { focusStack: [...s.focusStack, item] };
+      if (s.history.length === 0) return { page: { type: "dots" } };
+      const prev = s.history[s.history.length - 1];
+      return {
+        page: prev,
+        history: s.history.slice(0, -1),
+      };
     }),
-  popFocus: () =>
-    set((s) => ({ focusStack: s.focusStack.slice(0, -1) })),
-  clearFocus: () => set({ focusStack: [] }),
 
   searchOpen: false,
   setSearchOpen: (searchOpen) => set({ searchOpen }),
+
+  settingsOpen: false,
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
 }));

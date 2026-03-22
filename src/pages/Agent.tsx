@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Send, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { TweetCard, type Tweet } from "../components/TweetCard";
 
 interface AgentEvent {
@@ -126,40 +127,51 @@ export function Agent() {
 
   const suggestions = [
     "Trouve les tweets sur les agents IA dans mes signets",
-    "Quels sont les sujets principaux que j'ai bookmarkés ?",
-    "Cherche sur Twitter les dernières infos sur Claude Code",
+    "Quels sont les sujets principaux que j'ai bookmarkes ?",
+    "Cherche sur Twitter les dernieres infos sur Claude Code",
     "Connecte mes signets RAG avec ceux sur les embeddings",
   ];
 
   return (
-    <div className="h-full flex flex-col bg-white">
-      <div className="px-6 py-3 border-b border-zinc-200">
-        <h2 className="text-lg font-semibold tracking-tight text-zinc-900">Agent</h2>
-        <p className="text-[11px] text-zinc-500">Pose n'importe quelle question sur tes signets et Twitter</p>
+    <div className="h-full flex flex-col bg-bg">
+      <div className="px-6 py-3 border-b border-border">
+        <h2 className="text-lg font-semibold tracking-tight text-fg">Agent</h2>
+        <p className="text-[11px] text-muted-fg">Pose n'importe quelle question sur tes signets et Twitter</p>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
         {messages.length === 0 && (
-          <div className="flex flex-col items-start justify-center h-full gap-4 py-20 max-w-lg">
-            <p className="text-[13px] text-zinc-500">Qu'est-ce que tu veux explorer ?</p>
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="flex flex-col items-start justify-center h-full gap-4 py-20 max-w-lg"
+          >
+            <p className="text-[13px] text-muted-fg">Qu'est-ce que tu veux explorer ?</p>
             <div className="flex flex-col gap-1.5 w-full">
               {suggestions.map((s) => (
                 <button
                   key={s}
                   onClick={() => sendMessage(s)}
-                  className="text-[12px] text-zinc-500 hover:text-zinc-900 px-3 py-2 rounded-md border border-zinc-200 hover:bg-zinc-50 transition-colors text-left bg-white"
+                  className="text-xs text-muted-fg hover:text-fg px-3 py-2 rounded-md border border-border hover:bg-card transition-colors text-left bg-transparent"
                 >
                   {s}
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {messages.map((msg, i) => (
-          <div key={i} className={msg.role === "user" ? "flex justify-end" : ""}>
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className={msg.role === "user" ? "flex justify-end" : ""}
+          >
             {msg.role === "user" ? (
-              <div className="max-w-[80%] px-3 py-2 rounded-lg bg-zinc-900 text-white text-[13px]">
+              <div className="max-w-[80%] px-3 py-2 rounded-lg bg-fg text-bg text-[13px]">
                 {msg.content}
               </div>
             ) : (
@@ -167,12 +179,12 @@ export function Agent() {
                 {msg.tools?.map((tool, j) => (
                   <div key={j} className="mb-3">
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-violet-600" />
-                      <span className="text-[11px] text-violet-600 font-medium capitalize">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="text-[11px] text-emerald-400 font-medium capitalize">
                         {tool.tool.replace(/_/g, " ")}
                       </span>
                       {!tool.result && (
-                        <Loader2 size={12} className="text-violet-600 animate-spin" />
+                        <Loader2 size={12} className="text-emerald-400 animate-spin" />
                       )}
                     </div>
                     {tool.result != null && renderToolResult(tool.tool, tool.result)}
@@ -180,24 +192,24 @@ export function Agent() {
                 ))}
 
                 {msg.content && (
-                  <div className="text-[13px] text-zinc-700 leading-relaxed whitespace-pre-wrap">
+                  <div className="text-[13px] text-fg/80 leading-relaxed whitespace-pre-wrap">
                     {msg.content}
                   </div>
                 )}
               </div>
             )}
-          </div>
+          </motion.div>
         ))}
 
         {isRunning && messages[messages.length - 1]?.role !== "assistant" && (
-          <div className="flex items-center gap-2 text-[12px] text-zinc-400">
+          <div className="flex items-center gap-2 text-xs text-muted-fg">
             <Loader2 size={14} className="animate-spin" />
-            Réflexion en cours...
+            Reflexion en cours...
           </div>
         )}
       </div>
 
-      <div className="p-4 border-t border-zinc-200">
+      <div className="p-4 border-t border-border">
         <form
           onSubmit={(e) => { e.preventDefault(); sendMessage(); }}
           className="flex gap-2"
@@ -206,15 +218,15 @@ export function Agent() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Demande à l'agent..."
+            placeholder="Demande a l'agent..."
             disabled={isRunning}
-            className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-md text-[13px] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:bg-white focus:border-violet-600 focus:ring-1 focus:ring-violet-600/20 transition-all disabled:opacity-50"
+            className="flex-1 px-3 py-2 bg-card border border-border rounded-md text-[13px] text-fg placeholder-muted-fg focus:outline-none focus:ring-1 focus:ring-ring transition-all disabled:opacity-50"
             autoFocus
           />
           <button
             type="submit"
             disabled={isRunning || !input.trim()}
-            className="px-4 py-2 bg-zinc-900 text-white rounded-md text-[13px] font-medium hover:bg-zinc-800 disabled:opacity-30 transition-colors"
+            className="px-4 py-2 bg-fg text-bg rounded-md text-[13px] font-medium hover:opacity-90 disabled:opacity-30 transition-colors"
           >
             <Send size={16} />
           </button>
@@ -252,12 +264,12 @@ function renderToolResult(_tool: string, result: unknown): React.ReactNode {
       const tweets = result.map(normalizeTweet).filter(Boolean) as Tweet[];
       if (tweets.length > 0) {
         return (
-          <div className="space-y-1.5 pl-3 border-l-2 border-violet-200">
+          <div className="space-y-1.5 pl-3 border-l-2 border-emerald-500/30">
             {tweets.slice(0, 5).map((tweet, i) => (
               <TweetCard key={tweet.id || i} tweet={tweet} compact />
             ))}
             {tweets.length > 5 && (
-              <div className="text-[10px] text-zinc-400 pl-4">
+              <div className="text-[10px] text-muted-fg pl-4">
                 +{tweets.length - 5} de plus
               </div>
             )}
@@ -272,7 +284,7 @@ function renderToolResult(_tool: string, result: unknown): React.ReactNode {
       const tweet = normalizeTweet(obj);
       if (tweet) {
         return (
-          <div className="pl-3 border-l-2 border-violet-200">
+          <div className="pl-3 border-l-2 border-emerald-500/30">
             <TweetCard tweet={tweet} compact />
           </div>
         );
@@ -281,22 +293,22 @@ function renderToolResult(_tool: string, result: unknown): React.ReactNode {
 
     if (obj.success) {
       return (
-        <div className="text-[11px] text-emerald-600 pl-3 font-medium">
-          Fait {obj.tag ? `— tagué "${obj.tag}"` : ""}
+        <div className="text-[11px] text-emerald-400 pl-3 font-medium">
+          Fait {obj.tag ? `-- tague "${obj.tag}"` : ""}
         </div>
       );
     }
 
     if (obj.error) {
-      return <div className="text-[11px] text-red-500 pl-3">{String(obj.error)}</div>;
+      return <div className="text-[11px] text-red-400 pl-3">{String(obj.error)}</div>;
     }
 
     return (
-      <pre className="text-[10px] text-zinc-400 pl-3 overflow-x-auto">
+      <pre className="text-[10px] text-muted-fg pl-3 overflow-x-auto font-mono">
         {JSON.stringify(result, null, 2).slice(0, 500)}
       </pre>
     );
   } catch {
-    return <div className="text-[10px] text-red-500 pl-3">Erreur d'affichage du résultat</div>;
+    return <div className="text-[10px] text-red-400 pl-3">Erreur d'affichage du resultat</div>;
   }
 }

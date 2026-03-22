@@ -5,8 +5,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
-const RESOLVE_INTERVAL_SECS: u64 = 30;
-const BATCH_SIZE: u32 = 5;
+const RESOLVE_INTERVAL_SECS: u64 = 15;
+const BATCH_SIZE: u32 = 20;
 
 /// Extract a tweet ID from a URL like https://x.com/user/status/123456
 fn extract_tweet_id(url: &str) -> Option<String> {

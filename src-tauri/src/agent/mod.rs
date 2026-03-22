@@ -48,7 +48,7 @@ Outils disponibles :
 - find_similar : Trouve les tweets similaires par similarité sémantique.
 - tag_tweet : Ajoute un tag à un tweet via son ID.
 - get_tweet_info : Détails complets d'un tweet spécifique.
-- monitor_topic : Démarre la surveillance d'un sujet (polling automatique toutes les 5 min)."#;
+"#;
 
 pub async fn run_agent(
     db: Arc<Database>,
@@ -133,17 +133,6 @@ async fn run_agent_inner(
                 "required": ["tweet_id"]
             }
         },
-        {
-            "name": "monitor_topic",
-            "description": "Start monitoring a topic. The system will automatically search Twitter for this topic every 5 minutes and save new results.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string", "description": "The search query to monitor" }
-                },
-                "required": ["query"]
-            }
-        }
     ]);
 
     // Build messages
@@ -309,19 +298,6 @@ async fn execute_tool(
             match db.get_tweet_full(tweet_id) {
                 Ok(Some(tweet)) => serde_json::to_value(&tweet).unwrap_or_default(),
                 Ok(None) => serde_json::json!({"error": "Tweet not found"}),
-                Err(e) => serde_json::json!({"error": e.to_string()}),
-            }
-        }
-        "monitor_topic" => {
-            let query = input["query"].as_str().unwrap_or("");
-            match db.create_monitored_topic(query) {
-                Ok(topic) => serde_json::json!({
-                    "success": true,
-                    "topic_id": topic.id,
-                    "query": topic.query,
-                    "poll_interval_secs": topic.poll_interval_secs,
-                    "message": format!("Now monitoring '{}'. The system will search Twitter for this query every 5 minutes automatically.", query)
-                }),
                 Err(e) => serde_json::json!({"error": e.to_string()}),
             }
         }

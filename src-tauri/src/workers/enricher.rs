@@ -67,7 +67,7 @@ async fn enrich_batch(
     let system_prompt = r#"Tu analyses des tweets et extrais des métadonnées structurées pour une plateforme de veille technologique destinée à des centres de R&D. Pour chaque tweet, réponds avec un tableau JSON où chaque élément contient :
 - "id": l'id du tweet
 - "category": un domaine large pour le code couleur. Un parmi : "ai/ml", "dev-tools", "web", "crypto", "design", "science", "business", "politics", "culture", "other"
-- "cluster": un label PRÉCIS et SPÉCIFIQUE du sujet réel du tweet. C'est le champ le plus important. PAS une catégorie large — un concept, outil, technique ou sujet spécifique. Exemples : "rlhf", "claude-code", "prompt-engineering", "react-server-components", "rust-async", "cursor-ide", "attention-mechanism", "rag-pipelines", "vector-databases", "llm-inference", "stable-diffusion", "gpu-programming". Utilise des minuscules avec tirets. Sois aussi spécifique que le contenu le permet. Si c'est un outil/produit spécifique, utilise son nom. Si c'est une technique, nomme la technique.
+- "cluster": le NOM DU SUJET/PROJET/OUTIL de granularité moyenne. C'est le champ le plus important — il détermine dans quel "dot" (dossier thématique) le tweet sera rangé. Le niveau de granularité est crucial : ni trop large ("intelligence-artificielle" est TROP large), ni trop précis ("bug-fix-dans-claude-3.5" est TROP précis). Le bon niveau : "claude-code", "cursor-ide", "dspy", "rlhf", "react-server-components", "rust-async", "rag-pipelines", "stable-diffusion", "openai-codex", "mcp-protocol", "langchain", "vercel-ai-sdk". Si le tweet parle d'un outil/produit, utilise son nom. Si c'est une technique, nomme la technique. Si c'est un concept, nomme le concept. Utilise des minuscules avec tirets.
 - "summary": un résumé en une ligne EN FRANÇAIS (max 100 caractères). Capture l'essence du tweet pour un chercheur en veille techno.
 - "topics": tableau de 1-5 tags de sujets (minuscules, sans #). Complètent le cluster avec des concepts liés.
 - "type": un parmi : "tutorial", "opinion", "announcement", "thread", "question", "news", "meme", "showcase", "discussion", "resource", "alpha". Utilise "alpha" pour les informations exclusives ou signaux faibles. Utilise "meme" ou "opinion" pour le contenu sans substance technique.
@@ -134,6 +134,37 @@ Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown, sans explication
             &topics_json,
             &enrichment.r#type,
         )?;
+
+        // Auto-assign tweet to a dot based on cluster
+        if !enrichment.cluster.is_empty() {
+            let slug = enrichment.cluster.to_lowercase().replace(' ', "-");
+            let name = enrichment.cluster.split('-').map(|w| {
+                let mut c = w.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                }
+            }).collect::<Vec<_>>().join(" ");
+
+            // Pick color from category
+            let color = match enrichment.category.as_str() {
+                "ai/ml" => Some("#7C3AED"),
+                "dev-tools" => Some("#0891B2"),
+                "web" => Some("#2563EB"),
+                "crypto" => Some("#059669"),
+                "design" => Some("#DB2777"),
+                "science" => Some("#D97706"),
+                "business" => Some("#EA580C"),
+                "politics" => Some("#DC2626"),
+                "culture" => Some("#65A30D"),
+                _ => Some("#71717A"),
+            };
+
+            if let Ok(dot_id) = db.get_or_create_dot(&slug, &name, color) {
+                let _ = db.assign_tweet_to_dot(&enrichment.id, dot_id);
+            }
+        }
+
         count += 1;
     }
 
