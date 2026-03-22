@@ -1,0 +1,31 @@
+# Rust
+/target/
+src-tauri/target/
+
+# Node
+node_modules/
+dist/
+
+# Environment
+.env
+.env.*
+
+# SQLite
+*.db
+*.db-journal
+*.db-wal
+
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Tauri
+src-tauri/gen/
+
+SPEC.md
+CONCEPT.md
