@@ -1,0 +1,46 @@
+[package]
+name = "connecting-dots"
+version = "0.1.0"
+description = "A second brain plugged into Twitter/X"
+authors = ["Mathias Chebbah"]
+license = "MIT"
+repository = "https://github.com/mathiaschebbah/connecting-dots"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2.10.3", features = [] }
+tauri-plugin-log = "2"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+log = "0.4"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+rusqlite = { version = "0.34", features = ["bundled", "vtab"] }
+sqlite-vec = "0.1"
+
+# HTTP client (Claude API)
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }

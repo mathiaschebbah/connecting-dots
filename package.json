@@ -1,0 +1,40 @@
+{
+  "name": "connecting-dots",
+  "version": "1.0.0",
+  "description": "connecting-dots est un projet visant à tirer profit du réseau social X afin d'en faire un moteur de pensée à ciel ouvert, où chaque post créé par un utilisateur s'inscrit dans un nuage de pensée conceptuel, permettant à chacun de naviguer utilement et efficacement dans les flots et marées de la recherche, pensée et créativité communautaire.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mathiaschebbah/connecting-dots.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mathiaschebbah/connecting-dots/issues"
+  },
+  "homepage": "https://github.com/mathiaschebbah/connecting-dots#readme",
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.1"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.94.5",
+    "@tauri-apps/api": "^2.10.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "zustand": "^5.0.12"
+  }
+}
