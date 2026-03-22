@@ -1,5 +1,6 @@
 use crate::db::Database;
 use crate::embeddings::Embedder;
+use crate::twitter::bookmarks_fetcher::BookmarksFetcher;
 use crate::twitter::clix::Clix;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -49,14 +50,18 @@ async fn poll_once(
     embedder: &Embedder,
     source: &PollSource,
 ) -> anyhow::Result<(u32, u32)> {
-    let clix = Clix::new();
-
     // Fetch tweets from Twitter
     let tweets = match source {
         PollSource::Bookmarks => {
-            tokio::task::spawn_blocking(move || clix.bookmarks(100)).await??
+            // Use direct GraphQL fetcher for bookmarks (paginated, gets ALL)
+            tokio::task::spawn_blocking(|| {
+                let fetcher = BookmarksFetcher::from_clix_config()?;
+                fetcher.fetch_all(20) // up to 20 pages (~2000 bookmarks)
+            })
+            .await??
         }
         PollSource::Feed => {
+            let clix = Clix::new();
             tokio::task::spawn_blocking(move || clix.feed("following", 100)).await??
         }
     };
@@ -68,6 +73,12 @@ async fn poll_once(
 
     // Store in DB (dedup)
     let new_count = db.upsert_tweets(&tweets, source_name)?;
+
+    // Set bookmark ordering (API returns most recent first = index 0)
+    if matches!(source, PollSource::Bookmarks) {
+        let ids: Vec<String> = tweets.iter().map(|t| t.id.clone()).collect();
+        db.set_bookmark_order(&ids)?;
+    }
 
     // Embed any tweets without embeddings (batch of 50)
     let mut embedded_count = 0u32;

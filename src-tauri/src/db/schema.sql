@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tweets (
     bookmarks_count INTEGER DEFAULT 0,
     views INTEGER DEFAULT 0,
     source TEXT DEFAULT 'bookmark',
+    bookmark_order INTEGER,
     fetched_at TEXT NOT NULL,
     raw_json TEXT,
     -- Embedding (phase 1: local, fastembed-rs)

@@ -50,14 +50,12 @@ pub fn run() {
             let embedder = Embedder::new().expect("failed to initialize embedding model");
             let embedder = Arc::new(embedder);
 
-            // Start background workers if API key is configured
-            if config.has_api_key() {
-                workers::start_all(
-                    db.clone(),
-                    embedder.clone(),
-                    config.api_key().map(String::from),
-                );
-            }
+            // Start background workers (always — enrichment only if API key present)
+            workers::start_all(
+                db.clone(),
+                embedder.clone(),
+                config.api_key().map(String::from),
+            );
 
             app.manage(AppState {
                 db,

@@ -14,7 +14,7 @@ export function Bookmarks() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const results = await invoke<Tweet[]>("list_tweets", { limit: 50, offset: 0, source: "bookmark" });
+      const results = await invoke<Tweet[]>("list_tweets", { limit: 500, offset: 0, source: "bookmark" });
       setTweets(results);
       setTotal(results.length);
     } catch (err) {
@@ -34,7 +34,7 @@ export function Bookmarks() {
     setLoading(true);
     try {
       const command = searchMode === "semantic" ? "search_semantic" : "search_tweets";
-      const results = await invoke<Tweet[]>(command, { query: query.trim(), limit: 30 });
+      const results = await invoke<Tweet[]>(command, { query: query.trim(), limit: 30, source: "bookmark" });
       setTweets(results);
     } catch (err) {
       console.error("Search failed:", err);

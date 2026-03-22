@@ -64,10 +64,11 @@ pub async fn search_tweets(
     state: State<'_, AppState>,
     query: String,
     limit: Option<u32>,
+    source: Option<String>,
 ) -> Result<Vec<TweetRow>, String> {
     state
         .db
-        .search_fulltext(&query, limit.unwrap_or(20))
+        .search_fulltext(&query, limit.unwrap_or(20), source.as_deref())
         .map_err(|e| e.to_string())
 }
 

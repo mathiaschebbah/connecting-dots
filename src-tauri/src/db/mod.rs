@@ -120,9 +120,35 @@ impl Database {
             if rows > 0 {
                 count += 1;
             }
+
+            if source == "bookmark" {
+                // Upgrade source to bookmark (feed tweets found in bookmarks)
+                conn.execute(
+                    "UPDATE tweets SET source = 'bookmark' WHERE id = ?1",
+                    rusqlite::params![tweet.id],
+                )?;
+            }
         }
 
         Ok(count)
+    }
+
+    /// Set bookmark_order for a list of tweet IDs (in bookmarking order, index 0 = most recent)
+    /// Only assigns order to tweets that exist in DB, preserving relative order.
+    pub fn set_bookmark_order(&self, tweet_ids: &[String]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached(
+            "UPDATE tweets SET bookmark_order = ?1 WHERE id = ?2 AND source = 'bookmark'",
+        )?;
+        let mut order = 0i64;
+        for id in tweet_ids {
+            let changed = stmt.execute(rusqlite::params![order, id])?;
+            if changed > 0 {
+                order += 1;
+            }
+        }
+        log::info!("set_bookmark_order: assigned order to {} bookmarks", order);
+        Ok(())
     }
 
     /// Store embedding for a tweet
@@ -223,7 +249,7 @@ impl Database {
         let query = if source_filter.is_some() {
             "SELECT id, author_handle, author_name, content, created_at,
                     tweet_url, likes, retweets, replies_count, views, source
-             FROM tweets WHERE source = ?3 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
+             FROM tweets WHERE source = ?3 ORDER BY bookmark_order ASC LIMIT ?1 OFFSET ?2"
         } else {
             "SELECT id, author_handle, author_name, content, created_at,
                     tweet_url, likes, retweets, replies_count, views, source
@@ -260,19 +286,35 @@ impl Database {
     }
 
     /// Full-text search
-    pub fn search_fulltext(&self, query: &str, limit: u32) -> Result<Vec<TweetRow>> {
+    pub fn search_fulltext(
+        &self,
+        query: &str,
+        limit: u32,
+        source_filter: Option<&str>,
+    ) -> Result<Vec<TweetRow>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
+
+        let sql = if source_filter.is_some() {
+            "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source
+             FROM tweets t
+             JOIN tweets_fts fts ON t.rowid = fts.rowid
+             WHERE tweets_fts MATCH ?1 AND t.source = ?3
+             ORDER BY rank
+             LIMIT ?2"
+        } else {
             "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
                     t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source
              FROM tweets t
              JOIN tweets_fts fts ON t.rowid = fts.rowid
              WHERE tweets_fts MATCH ?1
              ORDER BY rank
-             LIMIT ?2",
-        )?;
+             LIMIT ?2"
+        };
 
-        let rows = stmt.query_map(rusqlite::params![query, limit], |row| {
+        let mut stmt = conn.prepare(sql)?;
+
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<TweetRow> {
             Ok(TweetRow {
                 id: row.get(0)?,
                 author_handle: row.get(1)?,
@@ -286,11 +328,15 @@ impl Database {
                 views: row.get(9)?,
                 source: row.get(10)?,
             })
-        })?;
+        };
 
         let mut tweets = Vec::new();
-        for row in rows {
-            tweets.push(row?);
+        if let Some(src) = source_filter {
+            let rows = stmt.query_map(rusqlite::params![query, limit, src], map_row)?;
+            for row in rows { tweets.push(row?); }
+        } else {
+            let rows = stmt.query_map(rusqlite::params![query, limit], map_row)?;
+            for row in rows { tweets.push(row?); }
         }
         Ok(tweets)
     }
