@@ -1,4 +1,4 @@
-use crate::db::{cosine_similarity, TweetRow};
+use crate::db::{cosine_similarity, TweetFull, TweetRow};
 use crate::twitter::clix::Clix;
 use crate::workers;
 use crate::AppState;
@@ -170,6 +170,42 @@ pub async fn set_api_key(
     log::info!("API key set, workers started");
 
     Ok(true)
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct TweetDetailResult {
+    pub tweet: TweetFull,
+    pub similar: Vec<TweetRow>,
+}
+
+#[tauri::command]
+pub async fn get_tweet_detail(
+    state: State<'_, AppState>,
+    tweet_id: String,
+) -> Result<TweetDetailResult, String> {
+    let tweet = state
+        .db
+        .get_tweet_full(&tweet_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Tweet not found".to_string())?;
+
+    // Find similar tweets via embedding
+    let similar = if tweet.has_embedding {
+        match state.db.get_embedding(&tweet_id) {
+            Ok(Some(embedding)) => state
+                .db
+                .search_semantic(&embedding, 10)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|t| t.id != tweet_id)
+                .collect(),
+            _ => vec![],
+        }
+    } else {
+        vec![]
+    };
+
+    Ok(TweetDetailResult { tweet, similar })
 }
 
 #[derive(Debug, Serialize, Clone)]

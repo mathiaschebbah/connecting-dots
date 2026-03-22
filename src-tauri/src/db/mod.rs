@@ -343,6 +343,84 @@ impl Database {
 
     // ── AI Metadata ──
 
+    /// Get a single tweet with all fields
+    pub fn get_tweet_full(&self, tweet_id: &str) -> Result<Option<TweetFull>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, author_id, author_handle, author_name, author_verified,
+                    content, created_at, conversation_id, language, tweet_url,
+                    reply_to_id, reply_to_handle, is_retweet, retweeted_by,
+                    media_json, quoted_tweet_json,
+                    likes, retweets, replies_count, quotes, bookmarks_count, views,
+                    source, ai_category, ai_summary, ai_topics, ai_type, embedding
+             FROM tweets WHERE id = ?1",
+        )?;
+        let result = stmt.query_row(rusqlite::params![tweet_id], |row| {
+            let embedding_blob: Option<Vec<u8>> = row.get(27)?;
+            let has_embedding = embedding_blob.is_some();
+            let topics_raw: Option<String> = row.get(25)?;
+            let topics: Vec<String> = topics_raw
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+            Ok(TweetFull {
+                id: row.get(0)?,
+                author_id: row.get(1)?,
+                author_handle: row.get(2)?,
+                author_name: row.get(3)?,
+                author_verified: row.get::<_, i32>(4)? != 0,
+                content: row.get(5)?,
+                created_at: row.get(6)?,
+                conversation_id: row.get(7)?,
+                language: row.get(8)?,
+                tweet_url: row.get(9)?,
+                reply_to_id: row.get(10)?,
+                reply_to_handle: row.get(11)?,
+                is_retweet: row.get::<_, i32>(12)? != 0,
+                retweeted_by: row.get(13)?,
+                media_json: row.get(14)?,
+                quoted_tweet_json: row.get(15)?,
+                likes: row.get(16)?,
+                retweets: row.get(17)?,
+                replies_count: row.get(18)?,
+                quotes: row.get(19)?,
+                bookmarks_count: row.get(20)?,
+                views: row.get(21)?,
+                source: row.get(22)?,
+                ai_category: row.get(23)?,
+                ai_summary: row.get(24)?,
+                ai_topics: topics,
+                ai_type: row.get(26)?,
+                has_embedding,
+            })
+        });
+        match result {
+            Ok(t) => Ok(Some(t)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Get embedding for a tweet
+    pub fn get_embedding(&self, tweet_id: &str) -> Result<Option<Vec<f32>>> {
+        let conn = self.conn.lock().unwrap();
+        let result: Result<Vec<u8>, _> = conn.query_row(
+            "SELECT embedding FROM tweets WHERE id = ?1 AND embedding IS NOT NULL",
+            rusqlite::params![tweet_id],
+            |row| row.get(0),
+        );
+        match result {
+            Ok(blob) => {
+                let embedding: Vec<f32> = blob
+                    .chunks_exact(4)
+                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .collect();
+                Ok(Some(embedding))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// Get tweets without AI metadata
     pub fn tweets_without_ai_metadata(&self, limit: u32) -> Result<Vec<(String, String)>> {
         let conn = self.conn.lock().unwrap();
@@ -456,6 +534,38 @@ pub struct GraphNode {
     pub topics: Vec<String>,
     #[serde(skip)]
     pub embedding: Vec<f32>,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct TweetFull {
+    pub id: String,
+    pub author_id: Option<String>,
+    pub author_handle: String,
+    pub author_name: Option<String>,
+    pub author_verified: bool,
+    pub content: String,
+    pub created_at: Option<String>,
+    pub conversation_id: Option<String>,
+    pub language: Option<String>,
+    pub tweet_url: Option<String>,
+    pub reply_to_id: Option<String>,
+    pub reply_to_handle: Option<String>,
+    pub is_retweet: bool,
+    pub retweeted_by: Option<String>,
+    pub media_json: Option<String>,
+    pub quoted_tweet_json: Option<String>,
+    pub likes: i64,
+    pub retweets: i64,
+    pub replies_count: i64,
+    pub quotes: i64,
+    pub bookmarks_count: i64,
+    pub views: i64,
+    pub source: String,
+    pub ai_category: Option<String>,
+    pub ai_summary: Option<String>,
+    pub ai_topics: Vec<String>,
+    pub ai_type: Option<String>,
+    pub has_embedding: bool,
 }
 
 #[derive(Debug, serde::Serialize, Clone)]

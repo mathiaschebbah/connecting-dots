@@ -78,6 +78,7 @@ pub fn run() {
             commands::embed_pending,
             commands::check_api_key,
             commands::set_api_key,
+            commands::get_tweet_detail,
             commands::get_network_graph,
         ])
         .run(tauri::generate_context!())
