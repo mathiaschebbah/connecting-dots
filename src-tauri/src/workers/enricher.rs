@@ -1,11 +1,13 @@
 use crate::db::Database;
+use crate::workers::SyncEvent;
 use std::sync::Arc;
+use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
 const ENRICH_INTERVAL_SECS: u64 = 15;
 const BATCH_SIZE: u32 = 20;
 
-pub async fn enrich_loop(db: Arc<Database>, api_key: String) {
+pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_handle: AppHandle) {
     log::info!(
         "Worker started: AI enrichment every {}s",
         ENRICH_INTERVAL_SECS
@@ -14,14 +16,30 @@ pub async fn enrich_loop(db: Arc<Database>, api_key: String) {
     let client = reqwest::Client::new();
 
     loop {
+        let _ = app_handle.emit("sync:event", SyncEvent {
+            worker: "enricher".to_string(),
+            status: "start".to_string(),
+            detail: None,
+        });
+
         match enrich_batch(&db, &client, &api_key).await {
             Ok(count) => {
                 if count > 0 {
                     log::info!("[enricher] enriched {} tweets", count);
                 }
+                let _ = app_handle.emit("sync:event", SyncEvent {
+                    worker: "enricher".to_string(),
+                    status: "done".to_string(),
+                    detail: if count > 0 { Some(format!("+{} enriched", count)) } else { None },
+                });
             }
             Err(e) => {
                 log::error!("[enricher] error: {}", e);
+                let _ = app_handle.emit("sync:event", SyncEvent {
+                    worker: "enricher".to_string(),
+                    status: "done".to_string(),
+                    detail: Some(format!("error: {}", e)),
+                });
             }
         }
 

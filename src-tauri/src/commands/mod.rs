@@ -1,5 +1,5 @@
 use crate::agent::{self, AgentEvent, ChatMessage};
-use crate::db::{cosine_similarity, Tag, TweetFull, TweetRow};
+use crate::db::{cosine_similarity, DashboardStats, Group, KanbanCard, KanbanColumn, MonitoredTopic, PinnedAccount, Project, Tag, TweetFull, TweetNote, TweetRow};
 use crate::twitter::clix::Clix;
 use crate::workers;
 use crate::AppState;
@@ -152,6 +152,7 @@ pub async fn check_api_key(state: State<'_, AppState>) -> Result<bool, String> {
 #[tauri::command]
 pub async fn set_api_key(
     state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
     api_key: String,
 ) -> Result<bool, String> {
     // Save to config
@@ -166,6 +167,7 @@ pub async fn set_api_key(
         state.db.clone(),
         state.embedder.clone(),
         Some(api_key),
+        app_handle,
     );
 
     log::info!("API key set, workers started");
@@ -283,6 +285,207 @@ pub async fn send_agent_message(
 
     Ok(true)
 }
+
+// ── Category queries ──
+
+#[tauri::command]
+pub async fn list_tweets_by_category(
+    state: State<'_, AppState>,
+    category: String,
+    limit: Option<u32>,
+) -> Result<Vec<TweetRow>, String> {
+    state.db.list_tweets_by_category(&category, limit.unwrap_or(50)).map_err(|e| e.to_string())
+}
+
+// ── Dashboard ──
+
+#[tauri::command]
+pub async fn get_dashboard_stats(state: State<'_, AppState>) -> Result<DashboardStats, String> {
+    state.db.get_dashboard_stats().map_err(|e| e.to_string())
+}
+
+// ── Projects ──
+
+#[tauri::command]
+pub async fn list_projects(state: State<'_, AppState>) -> Result<Vec<Project>, String> {
+    state.db.list_projects().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_project(
+    state: State<'_, AppState>,
+    name: String,
+    description: Option<String>,
+    color: Option<String>,
+) -> Result<Project, String> {
+    state.db.create_project(&name, description.as_deref(), color.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_project(state: State<'_, AppState>, id: i64) -> Result<bool, String> {
+    state.db.delete_project(id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+// ── Kanban ──
+
+#[tauri::command]
+pub async fn list_kanban_columns(state: State<'_, AppState>, project_id: i64) -> Result<Vec<KanbanColumn>, String> {
+    state.db.list_kanban_columns(project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_kanban_column(
+    state: State<'_, AppState>,
+    project_id: i64,
+    name: String,
+) -> Result<KanbanColumn, String> {
+    state.db.create_kanban_column(project_id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_kanban_column(state: State<'_, AppState>, id: i64) -> Result<bool, String> {
+    state.db.delete_kanban_column(id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn list_kanban_cards(state: State<'_, AppState>, column_id: i64) -> Result<Vec<KanbanCard>, String> {
+    state.db.list_kanban_cards(column_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_kanban_card(
+    state: State<'_, AppState>,
+    column_id: i64,
+    tweet_id: String,
+    note: Option<String>,
+) -> Result<KanbanCard, String> {
+    state.db.create_kanban_card(column_id, &tweet_id, note.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn move_kanban_card(
+    state: State<'_, AppState>,
+    card_id: i64,
+    target_column_id: i64,
+    target_position: i64,
+) -> Result<bool, String> {
+    state.db.move_kanban_card(card_id, target_column_id, target_position).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn delete_kanban_card(state: State<'_, AppState>, id: i64) -> Result<bool, String> {
+    state.db.delete_kanban_card(id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+// ── Monitored Topics ──
+
+#[tauri::command]
+pub async fn list_monitored_topics(state: State<'_, AppState>) -> Result<Vec<MonitoredTopic>, String> {
+    state.db.list_monitored_topics().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_monitored_topic(state: State<'_, AppState>, id: i64) -> Result<bool, String> {
+    state.db.delete_monitored_topic(id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+// ── Groups ──
+
+#[tauri::command]
+pub async fn list_groups(state: State<'_, AppState>, project_id: i64) -> Result<Vec<Group>, String> {
+    state.db.list_groups(project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_group(state: State<'_, AppState>, project_id: i64, name: String, color: Option<String>) -> Result<Group, String> {
+    state.db.create_group(project_id, &name, color.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_group(state: State<'_, AppState>, group_id: i64) -> Result<bool, String> {
+    state.db.delete_group(group_id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn add_tweet_to_group(state: State<'_, AppState>, tweet_id: String, group_id: i64) -> Result<bool, String> {
+    state.db.add_tweet_to_group(&tweet_id, group_id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn remove_tweet_from_group(state: State<'_, AppState>, tweet_id: String, group_id: i64) -> Result<bool, String> {
+    state.db.remove_tweet_from_group(&tweet_id, group_id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn get_group_tweets(state: State<'_, AppState>, group_id: i64, limit: Option<u32>) -> Result<Vec<TweetRow>, String> {
+    state.db.get_group_tweets(group_id, limit.unwrap_or(100)).map_err(|e| e.to_string())
+}
+
+// ── Tweet Notes ──
+
+#[tauri::command]
+pub async fn get_tweet_notes(state: State<'_, AppState>, tweet_id: String) -> Result<Vec<TweetNote>, String> {
+    state.db.get_tweet_notes(&tweet_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_tweet_note(state: State<'_, AppState>, tweet_id: String, content: String) -> Result<TweetNote, String> {
+    state.db.create_tweet_note(&tweet_id, &content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_tweet_note(state: State<'_, AppState>, note_id: i64, content: String) -> Result<bool, String> {
+    state.db.update_tweet_note(note_id, &content).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn delete_tweet_note(state: State<'_, AppState>, note_id: i64) -> Result<bool, String> {
+    state.db.delete_tweet_note(note_id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+// ── Pinned Accounts ──
+
+#[tauri::command]
+pub async fn list_pinned_accounts(state: State<'_, AppState>) -> Result<Vec<PinnedAccount>, String> {
+    state.db.list_pinned_accounts().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn pin_account(
+    state: State<'_, AppState>,
+    handle: String,
+    display_name: Option<String>,
+    bio: Option<String>,
+) -> Result<PinnedAccount, String> {
+    state.db.pin_account(&handle, display_name.as_deref(), bio.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn unpin_account(state: State<'_, AppState>, handle: String) -> Result<bool, String> {
+    state.db.unpin_account(&handle).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn get_account_tweets(
+    state: State<'_, AppState>,
+    handle: String,
+    limit: Option<u32>,
+) -> Result<Vec<TweetRow>, String> {
+    state.db.get_account_tweets(&handle, limit.unwrap_or(50)).map_err(|e| e.to_string())
+}
+
+// ── Network Graph ──
 
 #[derive(Debug, Serialize, Clone)]
 pub struct GraphData {

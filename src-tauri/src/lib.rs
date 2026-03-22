@@ -55,6 +55,7 @@ pub fn run() {
                 db.clone(),
                 embedder.clone(),
                 config.api_key().map(String::from),
+                app.handle().clone(),
             );
 
             app.manage(AppState {
@@ -84,6 +85,40 @@ pub fn run() {
             commands::remove_tag_from_tweet,
             commands::send_agent_message,
             commands::get_network_graph,
+            commands::list_tweets_by_category,
+            commands::get_dashboard_stats,
+            // Projects
+            commands::list_projects,
+            commands::create_project,
+            commands::delete_project,
+            // Kanban
+            commands::list_kanban_columns,
+            commands::create_kanban_column,
+            commands::delete_kanban_column,
+            commands::list_kanban_cards,
+            commands::create_kanban_card,
+            commands::move_kanban_card,
+            commands::delete_kanban_card,
+            // Monitored topics
+            commands::list_monitored_topics,
+            commands::delete_monitored_topic,
+            // Groups
+            commands::list_groups,
+            commands::create_group,
+            commands::delete_group,
+            commands::add_tweet_to_group,
+            commands::remove_tweet_from_group,
+            commands::get_group_tweets,
+            // Tweet notes
+            commands::get_tweet_notes,
+            commands::create_tweet_note,
+            commands::update_tweet_note,
+            commands::delete_tweet_note,
+            // Pinned accounts
+            commands::list_pinned_accounts,
+            commands::pin_account,
+            commands::unpin_account,
+            commands::get_account_tweets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

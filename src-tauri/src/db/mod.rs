@@ -194,7 +194,8 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
-                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_summary, t.ai_type, t.ai_topics,
+                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
              FROM tweets t
              JOIN tweets_vec v ON t.id = v.tweet_id
              WHERE v.embedding MATCH ?1
@@ -217,6 +218,11 @@ impl Database {
                     replies_count: row.get(8)?,
                     views: row.get(9)?,
                     source: row.get(10)?,
+                    ai_category: row.get(11)?,
+                    ai_summary: row.get(12)?,
+                    ai_type: row.get(13)?,
+                    ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                    has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
                 })
             },
         )?;
@@ -248,11 +254,13 @@ impl Database {
 
         let query = if source_filter.is_some() {
             "SELECT id, author_handle, author_name, content, created_at,
-                    tweet_url, likes, retweets, replies_count, views, source
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_summary, ai_type, ai_topics,
+                    (media_json IS NOT NULL AND media_json != '[]') as has_media
              FROM tweets WHERE source = ?3 ORDER BY bookmark_order ASC LIMIT ?1 OFFSET ?2"
         } else {
             "SELECT id, author_handle, author_name, content, created_at,
-                    tweet_url, likes, retweets, replies_count, views, source
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_summary, ai_type, ai_topics,
+                    (media_json IS NOT NULL AND media_json != '[]') as has_media
              FROM tweets ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
         };
 
@@ -271,6 +279,11 @@ impl Database {
                 replies_count: row.get(8)?,
                 views: row.get(9)?,
                 source: row.get(10)?,
+                ai_category: row.get(11)?,
+                ai_summary: row.get(12)?,
+                ai_type: row.get(13)?,
+                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
             })
         };
 
@@ -296,7 +309,8 @@ impl Database {
 
         let sql = if source_filter.is_some() {
             "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
-                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_summary, t.ai_type, t.ai_topics,
+                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
              FROM tweets t
              JOIN tweets_fts fts ON t.rowid = fts.rowid
              WHERE tweets_fts MATCH ?1 AND t.source = ?3
@@ -304,7 +318,8 @@ impl Database {
              LIMIT ?2"
         } else {
             "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
-                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_summary, t.ai_type, t.ai_topics,
+                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
              FROM tweets t
              JOIN tweets_fts fts ON t.rowid = fts.rowid
              WHERE tweets_fts MATCH ?1
@@ -327,6 +342,11 @@ impl Database {
                 replies_count: row.get(8)?,
                 views: row.get(9)?,
                 source: row.get(10)?,
+                ai_category: row.get(11)?,
+                ai_summary: row.get(12)?,
+                ai_type: row.get(13)?,
+                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
             })
         };
 
@@ -518,6 +538,507 @@ impl Database {
         Ok(())
     }
 
+    // ── Projects ──
+
+    pub fn list_projects(&self) -> Result<Vec<Project>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, description, color, created_at FROM projects ORDER BY created_at DESC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                color: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        let mut projects = Vec::new();
+        for row in rows { projects.push(row?); }
+        Ok(projects)
+    }
+
+    pub fn create_project(&self, name: &str, description: Option<&str>, color: Option<&str>) -> Result<Project> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO projects (name, description, color, created_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![name, description, color, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(Project { id, name: name.to_string(), description: description.map(String::from), color: color.map(String::from), created_at: now })
+    }
+
+    pub fn delete_project(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // Delete cards in project's columns first
+        conn.execute(
+            "DELETE FROM kanban_cards WHERE column_id IN (SELECT id FROM kanban_columns WHERE project_id = ?1)",
+            rusqlite::params![id],
+        )?;
+        conn.execute("DELETE FROM kanban_columns WHERE project_id = ?1", rusqlite::params![id])?;
+        conn.execute("DELETE FROM project_accounts WHERE project_id = ?1", rusqlite::params![id])?;
+        conn.execute("DELETE FROM groups WHERE project_id = ?1", rusqlite::params![id])?;
+        conn.execute("DELETE FROM projects WHERE id = ?1", rusqlite::params![id])?;
+        Ok(())
+    }
+
+    // ── Kanban ──
+
+    pub fn list_kanban_columns(&self, project_id: i64) -> Result<Vec<KanbanColumn>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, name, position FROM kanban_columns WHERE project_id = ?1 ORDER BY position"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![project_id], |row| {
+            Ok(KanbanColumn { id: row.get(0)?, project_id: row.get(1)?, name: row.get(2)?, position: row.get(3)? })
+        })?;
+        let mut cols = Vec::new();
+        for row in rows { cols.push(row?); }
+        Ok(cols)
+    }
+
+    pub fn create_kanban_column(&self, project_id: i64, name: &str) -> Result<KanbanColumn> {
+        let conn = self.conn.lock().unwrap();
+        let max_pos: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) FROM kanban_columns WHERE project_id = ?1",
+            rusqlite::params![project_id],
+            |row| row.get(0),
+        )?;
+        let position = max_pos + 1;
+        conn.execute(
+            "INSERT INTO kanban_columns (project_id, name, position) VALUES (?1, ?2, ?3)",
+            rusqlite::params![project_id, name, position],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(KanbanColumn { id, project_id, name: name.to_string(), position })
+    }
+
+    pub fn delete_kanban_column(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM kanban_cards WHERE column_id = ?1", rusqlite::params![id])?;
+        conn.execute("DELETE FROM kanban_columns WHERE id = ?1", rusqlite::params![id])?;
+        Ok(())
+    }
+
+    pub fn list_kanban_cards(&self, column_id: i64) -> Result<Vec<KanbanCard>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT k.id, k.column_id, k.tweet_id, k.note, k.position, t.author_handle, substr(t.content, 1, 200)
+             FROM kanban_cards k LEFT JOIN tweets t ON k.tweet_id = t.id
+             WHERE k.column_id = ?1 ORDER BY k.position"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![column_id], |row| {
+            Ok(KanbanCard {
+                id: row.get(0)?,
+                column_id: row.get(1)?,
+                tweet_id: row.get(2)?,
+                note: row.get(3)?,
+                position: row.get(4)?,
+                author_handle: row.get(5)?,
+                content: row.get(6)?,
+            })
+        })?;
+        let mut cards = Vec::new();
+        for row in rows { cards.push(row?); }
+        Ok(cards)
+    }
+
+    pub fn create_kanban_card(&self, column_id: i64, tweet_id: &str, note: Option<&str>) -> Result<KanbanCard> {
+        let conn = self.conn.lock().unwrap();
+        let max_pos: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) FROM kanban_cards WHERE column_id = ?1",
+            rusqlite::params![column_id],
+            |row| row.get(0),
+        )?;
+        let position = max_pos + 1;
+        conn.execute(
+            "INSERT INTO kanban_cards (column_id, tweet_id, note, position) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![column_id, tweet_id, note, position],
+        )?;
+        let id = conn.last_insert_rowid();
+        // Fetch denormalized tweet info
+        let (author, content) = conn.query_row(
+            "SELECT author_handle, substr(content, 1, 200) FROM tweets WHERE id = ?1",
+            rusqlite::params![tweet_id],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+        ).unwrap_or((None, None));
+        Ok(KanbanCard { id, column_id, tweet_id: tweet_id.to_string(), note: note.map(String::from), position, author_handle: author, content })
+    }
+
+    pub fn move_kanban_card(&self, card_id: i64, target_column_id: i64, target_position: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // Shift existing cards at target position
+        conn.execute(
+            "UPDATE kanban_cards SET position = position + 1 WHERE column_id = ?1 AND position >= ?2",
+            rusqlite::params![target_column_id, target_position],
+        )?;
+        conn.execute(
+            "UPDATE kanban_cards SET column_id = ?1, position = ?2 WHERE id = ?3",
+            rusqlite::params![target_column_id, target_position, card_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_kanban_card(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM kanban_cards WHERE id = ?1", rusqlite::params![id])?;
+        Ok(())
+    }
+
+    // ── Tweet Notes ──
+
+    pub fn get_tweet_notes(&self, tweet_id: &str) -> Result<Vec<TweetNote>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, tweet_id, content, created_at, updated_at FROM tweet_notes WHERE tweet_id = ?1 ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![tweet_id], |row| {
+            Ok(TweetNote {
+                id: row.get(0)?,
+                tweet_id: row.get(1)?,
+                content: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        let mut notes = Vec::new();
+        for row in rows { notes.push(row?); }
+        Ok(notes)
+    }
+
+    pub fn create_tweet_note(&self, tweet_id: &str, content: &str) -> Result<TweetNote> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO tweet_notes (tweet_id, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![tweet_id, content, now, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(TweetNote { id, tweet_id: tweet_id.to_string(), content: content.to_string(), created_at: now.clone(), updated_at: now })
+    }
+
+    pub fn update_tweet_note(&self, note_id: i64, content: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE tweet_notes SET content = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![content, now, note_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_tweet_note(&self, note_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM tweet_notes WHERE id = ?1", rusqlite::params![note_id])?;
+        Ok(())
+    }
+
+    // ── Groups ──
+
+    pub fn list_groups(&self, project_id: i64) -> Result<Vec<Group>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT g.id, g.project_id, g.name, g.description, g.color,
+                    (SELECT COUNT(*) FROM tweet_groups tg WHERE tg.group_id = g.id) as tweet_count
+             FROM groups g WHERE g.project_id = ?1 ORDER BY g.name"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![project_id], |row| {
+            Ok(Group {
+                id: row.get(0)?, project_id: row.get(1)?, name: row.get(2)?,
+                description: row.get(3)?, color: row.get(4)?, tweet_count: row.get(5)?,
+            })
+        })?;
+        let mut groups = Vec::new();
+        for row in rows { groups.push(row?); }
+        Ok(groups)
+    }
+
+    pub fn create_group(&self, project_id: i64, name: &str, color: Option<&str>) -> Result<Group> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO groups (project_id, name, color) VALUES (?1, ?2, ?3)",
+            rusqlite::params![project_id, name, color],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(Group { id, project_id, name: name.to_string(), description: None, color: color.map(String::from), tweet_count: 0 })
+    }
+
+    pub fn delete_group(&self, group_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM tweet_groups WHERE group_id = ?1", rusqlite::params![group_id])?;
+        conn.execute("DELETE FROM groups WHERE id = ?1", rusqlite::params![group_id])?;
+        Ok(())
+    }
+
+    pub fn add_tweet_to_group(&self, tweet_id: &str, group_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO tweet_groups (tweet_id, group_id) VALUES (?1, ?2)",
+            rusqlite::params![tweet_id, group_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_tweet_from_group(&self, tweet_id: &str, group_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM tweet_groups WHERE tweet_id = ?1 AND group_id = ?2",
+            rusqlite::params![tweet_id, group_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_group_tweets(&self, group_id: i64, limit: u32) -> Result<Vec<TweetRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_summary, t.ai_type, t.ai_topics,
+                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
+             FROM tweets t
+             JOIN tweet_groups tg ON t.id = tg.tweet_id
+             WHERE tg.group_id = ?1
+             ORDER BY t.created_at DESC LIMIT ?2"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![group_id, limit], |row| {
+            Ok(TweetRow {
+                id: row.get(0)?, author_handle: row.get(1)?, author_name: row.get(2)?,
+                content: row.get(3)?, created_at: row.get(4)?, tweet_url: row.get(5)?,
+                likes: row.get(6)?, retweets: row.get(7)?, replies_count: row.get(8)?,
+                views: row.get(9)?, source: row.get(10)?, ai_category: row.get(11)?,
+                ai_summary: row.get(12)?, ai_type: row.get(13)?,
+                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+            })
+        })?;
+        let mut tweets = Vec::new();
+        for row in rows { tweets.push(row?); }
+        Ok(tweets)
+    }
+
+    // ── Pinned Accounts ──
+
+    pub fn list_pinned_accounts(&self) -> Result<Vec<PinnedAccount>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT p.handle, p.display_name, p.bio, p.avatar_url, p.pinned_since,
+                    p.poll_interval_secs, p.last_polled_at, p.notes,
+                    (SELECT COUNT(*) FROM tweets t WHERE t.author_handle = p.handle) as tweet_count
+             FROM pinned_accounts p ORDER BY p.pinned_since DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(PinnedAccount {
+                handle: row.get(0)?,
+                display_name: row.get(1)?,
+                bio: row.get(2)?,
+                avatar_url: row.get(3)?,
+                pinned_since: row.get(4)?,
+                poll_interval_secs: row.get(5)?,
+                last_polled_at: row.get(6)?,
+                notes: row.get(7)?,
+                tweet_count: row.get(8)?,
+            })
+        })?;
+        let mut accounts = Vec::new();
+        for row in rows { accounts.push(row?); }
+        Ok(accounts)
+    }
+
+    pub fn pin_account(&self, handle: &str, display_name: Option<&str>, bio: Option<&str>) -> Result<PinnedAccount> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT OR IGNORE INTO pinned_accounts (handle, display_name, bio, pinned_since) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![handle, display_name, bio, now],
+        )?;
+        let tweet_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM tweets WHERE author_handle = ?1",
+            rusqlite::params![handle],
+            |row| row.get(0),
+        )?;
+        Ok(PinnedAccount {
+            handle: handle.to_string(),
+            display_name: display_name.map(String::from),
+            bio: bio.map(String::from),
+            avatar_url: None,
+            pinned_since: now,
+            poll_interval_secs: 300,
+            last_polled_at: None,
+            notes: None,
+            tweet_count,
+        })
+    }
+
+    pub fn unpin_account(&self, handle: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM project_accounts WHERE account_handle = ?1", rusqlite::params![handle])?;
+        conn.execute("DELETE FROM pinned_accounts WHERE handle = ?1", rusqlite::params![handle])?;
+        Ok(())
+    }
+
+    pub fn get_account_tweets(&self, handle: &str, limit: u32) -> Result<Vec<TweetRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, author_handle, author_name, content, created_at,
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_summary, ai_type, ai_topics,
+                    (media_json IS NOT NULL AND media_json != '[]') as has_media
+             FROM tweets WHERE author_handle = ?1 ORDER BY created_at DESC LIMIT ?2"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![handle, limit], |row| {
+            Ok(TweetRow {
+                id: row.get(0)?, author_handle: row.get(1)?, author_name: row.get(2)?,
+                content: row.get(3)?, created_at: row.get(4)?, tweet_url: row.get(5)?,
+                likes: row.get(6)?, retweets: row.get(7)?, replies_count: row.get(8)?,
+                views: row.get(9)?, source: row.get(10)?, ai_category: row.get(11)?,
+                ai_summary: row.get(12)?,
+                ai_type: row.get(13)?,
+                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+            })
+        })?;
+        let mut tweets = Vec::new();
+        for row in rows { tweets.push(row?); }
+        Ok(tweets)
+    }
+
+    /// List tweets filtered by ai_category
+    pub fn list_tweets_by_category(&self, category: &str, limit: u32) -> Result<Vec<TweetRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, author_handle, author_name, content, created_at,
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_summary, ai_type, ai_topics,
+                    (media_json IS NOT NULL AND media_json != '[]') as has_media
+             FROM tweets WHERE ai_category = ?1 ORDER BY created_at DESC LIMIT ?2"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![category, limit], |row| {
+            Ok(TweetRow {
+                id: row.get(0)?, author_handle: row.get(1)?, author_name: row.get(2)?,
+                content: row.get(3)?, created_at: row.get(4)?, tweet_url: row.get(5)?,
+                likes: row.get(6)?, retweets: row.get(7)?, replies_count: row.get(8)?,
+                views: row.get(9)?, source: row.get(10)?, ai_category: row.get(11)?,
+                ai_summary: row.get(12)?,
+                ai_type: row.get(13)?,
+                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+            })
+        })?;
+        let mut tweets = Vec::new();
+        for row in rows { tweets.push(row?); }
+        Ok(tweets)
+    }
+
+    // ── Monitored Topics ──
+
+    pub fn list_monitored_topics(&self) -> Result<Vec<MonitoredTopic>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, query, created_at, last_polled_at, poll_interval_secs, is_active FROM monitored_topics ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(MonitoredTopic {
+                id: row.get(0)?, query: row.get(1)?, created_at: row.get(2)?,
+                last_polled_at: row.get(3)?, poll_interval_secs: row.get(4)?, is_active: row.get::<_, i32>(5)? != 0,
+            })
+        })?;
+        let mut topics = Vec::new();
+        for row in rows { topics.push(row?); }
+        Ok(topics)
+    }
+
+    pub fn create_monitored_topic(&self, query: &str) -> Result<MonitoredTopic> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO monitored_topics (query, created_at, poll_interval_secs, is_active) VALUES (?1, ?2, 300, 1)",
+            rusqlite::params![query, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(MonitoredTopic { id, query: query.to_string(), created_at: now, last_polled_at: None, poll_interval_secs: 300, is_active: true })
+    }
+
+    pub fn delete_monitored_topic(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM monitored_topics WHERE id = ?1", rusqlite::params![id])?;
+        Ok(())
+    }
+
+    pub fn get_due_monitored_topics(&self) -> Result<Vec<MonitoredTopic>> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut stmt = conn.prepare(
+            "SELECT id, query, created_at, last_polled_at, poll_interval_secs, is_active
+             FROM monitored_topics
+             WHERE is_active = 1
+             AND (last_polled_at IS NULL OR datetime(last_polled_at, '+' || poll_interval_secs || ' seconds') <= datetime(?1))"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![now], |row| {
+            Ok(MonitoredTopic {
+                id: row.get(0)?, query: row.get(1)?, created_at: row.get(2)?,
+                last_polled_at: row.get(3)?, poll_interval_secs: row.get(4)?, is_active: row.get::<_, i32>(5)? != 0,
+            })
+        })?;
+        let mut topics = Vec::new();
+        for row in rows { topics.push(row?); }
+        Ok(topics)
+    }
+
+    pub fn update_topic_polled(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute("UPDATE monitored_topics SET last_polled_at = ?1 WHERE id = ?2", rusqlite::params![now, id])?;
+        Ok(())
+    }
+
+    // ── Dashboard Stats ──
+
+    pub fn get_dashboard_stats(&self) -> Result<DashboardStats> {
+        let conn = self.conn.lock().unwrap();
+
+        let total_tweets: u32 = conn.query_row("SELECT COUNT(*) FROM tweets", [], |r| r.get(0))?;
+        let total_bookmarks: u32 = conn.query_row("SELECT COUNT(*) FROM tweets WHERE source = 'bookmark'", [], |r| r.get(0))?;
+        let enriched_count: u32 = conn.query_row("SELECT COUNT(*) FROM tweets WHERE ai_category IS NOT NULL", [], |r| r.get(0))?;
+        let pending_enrichment: u32 = conn.query_row("SELECT COUNT(*) FROM tweets WHERE ai_enriched_at IS NULL", [], |r| r.get(0))?;
+        let pending_embedding: u32 = conn.query_row("SELECT COUNT(*) FROM tweets WHERE embedding IS NULL", [], |r| r.get(0))?;
+
+        // Category counts
+        let mut cat_stmt = conn.prepare(
+            "SELECT ai_category, COUNT(*) FROM tweets WHERE ai_category IS NOT NULL GROUP BY ai_category ORDER BY COUNT(*) DESC"
+        )?;
+        let cat_rows = cat_stmt.query_map([], |row| {
+            Ok(CategoryCount { name: row.get(0)?, count: row.get(1)? })
+        })?;
+        let mut categories = Vec::new();
+        for row in cat_rows { categories.push(row?); }
+
+        // Top topics (parse JSON arrays, aggregate)
+        let mut topic_stmt = conn.prepare(
+            "SELECT ai_topics FROM tweets WHERE ai_topics IS NOT NULL AND ai_topics != '[]'"
+        )?;
+        let topic_rows = topic_stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut topic_counts = std::collections::HashMap::<String, u32>::new();
+        for row in topic_rows {
+            if let Ok(raw) = row {
+                if let Ok(topics) = serde_json::from_str::<Vec<String>>(&raw) {
+                    for topic in topics {
+                        *topic_counts.entry(topic).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        let mut top_topics: Vec<(String, u32)> = topic_counts.into_iter().collect();
+        top_topics.sort_by(|a, b| b.1.cmp(&a.1));
+        top_topics.truncate(20);
+
+        Ok(DashboardStats {
+            total_tweets,
+            total_bookmarks,
+            enriched_count,
+            pending_enrichment,
+            pending_embedding,
+            categories,
+            top_topics,
+        })
+    }
+
     // ── Network Graph ──
 
     /// Get tweets with embeddings for the network graph
@@ -607,6 +1128,48 @@ pub struct Tag {
 }
 
 #[derive(Debug, serde::Serialize, Clone)]
+pub struct Project {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct KanbanColumn {
+    pub id: i64,
+    pub project_id: i64,
+    pub name: String,
+    pub position: i64,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct KanbanCard {
+    pub id: i64,
+    pub column_id: i64,
+    pub tweet_id: String,
+    pub note: Option<String>,
+    pub position: i64,
+    // Denormalized tweet info for display
+    pub author_handle: Option<String>,
+    pub content: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct PinnedAccount {
+    pub handle: String,
+    pub display_name: Option<String>,
+    pub bio: Option<String>,
+    pub avatar_url: Option<String>,
+    pub pinned_since: String,
+    pub poll_interval_secs: i64,
+    pub last_polled_at: Option<String>,
+    pub notes: Option<String>,
+    pub tweet_count: i64,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct TweetFull {
     pub id: String,
     pub author_id: Option<String>,
@@ -651,4 +1214,55 @@ pub struct TweetRow {
     pub replies_count: i64,
     pub views: i64,
     pub source: String,
+    pub ai_category: Option<String>,
+    pub ai_summary: Option<String>,
+    pub ai_type: Option<String>,
+    pub ai_topics: Vec<String>,
+    pub has_media: bool,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct TweetNote {
+    pub id: i64,
+    pub tweet_id: String,
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct MonitoredTopic {
+    pub id: i64,
+    pub query: String,
+    pub created_at: String,
+    pub last_polled_at: Option<String>,
+    pub poll_interval_secs: i64,
+    pub is_active: bool,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct Group {
+    pub id: i64,
+    pub project_id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+    pub tweet_count: u32,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct CategoryCount {
+    pub name: String,
+    pub count: u32,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct DashboardStats {
+    pub total_tweets: u32,
+    pub total_bookmarks: u32,
+    pub enriched_count: u32,
+    pub pending_enrichment: u32,
+    pub pending_embedding: u32,
+    pub categories: Vec<CategoryCount>,
+    pub top_topics: Vec<(String, u32)>,
 }

@@ -183,3 +183,13 @@ CREATE TABLE IF NOT EXISTS account_interactions (
     last_seen_at TEXT,
     PRIMARY KEY (source_handle, target_handle, interaction_type)
 );
+
+-- Monitored topics (agent-created recurring searches)
+CREATE TABLE IF NOT EXISTS monitored_topics (
+    id INTEGER PRIMARY KEY,
+    query TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_polled_at TEXT,
+    poll_interval_secs INTEGER DEFAULT 300,
+    is_active INTEGER DEFAULT 1
+);

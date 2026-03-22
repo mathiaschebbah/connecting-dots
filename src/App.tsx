@@ -1,37 +1,49 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Sidebar } from "./components/Sidebar";
+import { useAppStore } from "./stores/appStore";
+import { CortexBar } from "./components/CortexBar";
+import { TopicRibbon } from "./components/TopicRibbon";
+import { FocusPanel } from "./components/FocusPanel";
+import { SettingsModal } from "./components/SettingsModal";
+import { UnifiedSearch } from "./components/UnifiedSearch";
 import { ApiKeyGate } from "./pages/ApiKeyGate";
-import { Dashboard } from "./pages/Dashboard";
-import { Bookmarks } from "./pages/Bookmarks";
-import { Kanban } from "./pages/Kanban";
-import { Network } from "./pages/Network";
-import { Pinned } from "./pages/Pinned";
-import { Agent } from "./pages/Agent";
-import { Settings } from "./pages/Settings";
+import { River } from "./lenses/River";
+import { Clusters } from "./lenses/Clusters";
+import { Graph } from "./lenses/Graph";
+import { Boards } from "./lenses/Boards";
 
-const PAGES: Record<string, React.FC> = {
-  dashboard: Dashboard,
-  bookmarks: Bookmarks,
-  kanban: Kanban,
-  network: Network,
-  pinned: Pinned,
-  agent: Agent,
-  settings: Settings,
-};
+const LENSES = {
+  river: River,
+  clusters: Clusters,
+  graph: Graph,
+  boards: Boards,
+} as const;
 
 function App() {
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
-  const [currentPage, setCurrentPage] = useState("dashboard");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const lens = useAppStore((s) => s.lens);
 
   useEffect(() => {
     invoke<boolean>("check_api_key").then(setHasApiKey).catch(() => setHasApiKey(false));
   }, []);
 
+  // Cmd+K shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        useAppStore.getState().setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   if (hasApiKey === null) {
     return (
-      <div className="h-screen w-screen bg-[#08080c] flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+      <div className="h-screen w-screen bg-zinc-50 flex items-center justify-center">
+        <div className="w-4 h-4 border-2 border-zinc-200 border-t-zinc-900 rounded-full animate-spin" />
       </div>
     );
   }
@@ -40,14 +52,22 @@ function App() {
     return <ApiKeyGate onAuthenticated={() => setHasApiKey(true)} />;
   }
 
-  const Page = PAGES[currentPage] ?? Dashboard;
+  const LensComponent = LENSES[lens];
 
   return (
-    <div className="flex h-screen bg-[#08080c] text-white overflow-hidden">
-      <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
-      <main className="flex-1 overflow-auto">
-        <Page />
-      </main>
+    <div className="flex flex-col h-screen bg-zinc-50 text-zinc-900 overflow-hidden">
+      <CortexBar onSettingsOpen={() => setSettingsOpen(true)} />
+      <TopicRibbon />
+
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <LensComponent />
+        </div>
+        <FocusPanel />
+      </div>
+
+      <UnifiedSearch />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

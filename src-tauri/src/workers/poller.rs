@@ -2,7 +2,9 @@ use crate::db::Database;
 use crate::embeddings::Embedder;
 use crate::twitter::bookmarks_fetcher::BookmarksFetcher;
 use crate::twitter::clix::Clix;
+use crate::workers::SyncEvent;
 use std::sync::Arc;
+use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
 #[derive(Clone)]
@@ -17,7 +19,7 @@ pub struct PollConfig {
     pub interval_secs: u64,
 }
 
-pub async fn poll_loop(db: Arc<Database>, embedder: Arc<Embedder>, config: PollConfig) {
+pub async fn poll_loop_with_events(db: Arc<Database>, embedder: Arc<Embedder>, config: PollConfig, app_handle: AppHandle) {
     let source_name = match config.source {
         PollSource::Bookmarks => "bookmarks",
         PollSource::Feed => "feed",
@@ -30,14 +32,33 @@ pub async fn poll_loop(db: Arc<Database>, embedder: Arc<Embedder>, config: PollC
     );
 
     loop {
+        let _ = app_handle.emit("sync:event", SyncEvent {
+            worker: source_name.to_string(),
+            status: "start".to_string(),
+            detail: None,
+        });
+
         match poll_once(&db, &embedder, &config.source).await {
             Ok((new, embedded)) => {
-                if new > 0 {
+                let detail = if new > 0 {
                     log::info!("[{}] +{} tweets, {} embedded", source_name, new, embedded);
-                }
+                    Some(format!("+{} tweets", new))
+                } else {
+                    None
+                };
+                let _ = app_handle.emit("sync:event", SyncEvent {
+                    worker: source_name.to_string(),
+                    status: "done".to_string(),
+                    detail,
+                });
             }
             Err(e) => {
                 log::error!("[{}] poll error: {}", source_name, e);
+                let _ = app_handle.emit("sync:event", SyncEvent {
+                    worker: source_name.to_string(),
+                    status: "done".to_string(),
+                    detail: Some(format!("error: {}", e)),
+                });
             }
         }
 
@@ -96,4 +117,49 @@ async fn poll_once(
     }
 
     Ok((new_count, embedded_count))
+}
+
+/// Poll monitored topics: search Twitter for each due topic and upsert results
+pub async fn poll_monitored_topics(db: &Database, embedder: &Embedder) {
+    let topics = match db.get_due_monitored_topics() {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("Failed to get due topics: {}", e);
+            return;
+        }
+    };
+
+    for topic in topics {
+        let query = topic.query.clone();
+        let topic_id = topic.id;
+        log::info!("[monitor] Searching for topic: {}", query);
+
+        let result = tokio::task::spawn_blocking(move || {
+            let clix = Clix::new();
+            clix.search(&query, 20)
+        })
+        .await;
+
+        match result {
+            Ok(Ok(tweets)) => {
+                let count = db.upsert_tweets(&tweets, "feed").unwrap_or(0);
+                if count > 0 {
+                    log::info!("[monitor] '{}': +{} new tweets", topic.query, count);
+                    // Embed new tweets
+                    let pending = db.tweets_without_embedding(50).unwrap_or_default();
+                    if !pending.is_empty() {
+                        let texts: Vec<String> = pending.iter().map(|(_, c)| c.clone()).collect();
+                        if let Ok(embeddings) = embedder.embed_batch(&texts) {
+                            for ((id, _), emb) in pending.iter().zip(embeddings.iter()) {
+                                let _ = db.store_embedding(id, emb);
+                            }
+                        }
+                    }
+                }
+                let _ = db.update_topic_polled(topic_id);
+            }
+            Ok(Err(e)) => log::warn!("[monitor] '{}' search error: {}", topic.query, e),
+            Err(e) => log::warn!("[monitor] '{}' task error: {}", topic.query, e),
+        }
+    }
 }
