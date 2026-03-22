@@ -125,23 +125,23 @@ export function Agent() {
   };
 
   const suggestions = [
-    "Find tweets about AI agents in my bookmarks",
-    "What are the main topics I've bookmarked?",
-    "Search Twitter for the latest on Claude Code",
-    "Connect my RAG bookmarks with the embedding ones",
+    "Trouve les tweets sur les agents IA dans mes signets",
+    "Quels sont les sujets principaux que j'ai bookmarkés ?",
+    "Cherche sur Twitter les dernières infos sur Claude Code",
+    "Connecte mes signets RAG avec ceux sur les embeddings",
   ];
 
   return (
     <div className="h-full flex flex-col bg-white">
       <div className="px-6 py-3 border-b border-zinc-200">
         <h2 className="text-lg font-semibold tracking-tight text-zinc-900">Agent</h2>
-        <p className="text-[11px] text-zinc-500">Ask anything about your bookmarks and Twitter</p>
+        <p className="text-[11px] text-zinc-500">Pose n'importe quelle question sur tes signets et Twitter</p>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-start justify-center h-full gap-4 py-20 max-w-lg">
-            <p className="text-[13px] text-zinc-500">What do you want to explore?</p>
+            <p className="text-[13px] text-zinc-500">Qu'est-ce que tu veux explorer ?</p>
             <div className="flex flex-col gap-1.5 w-full">
               {suggestions.map((s) => (
                 <button
@@ -192,7 +192,7 @@ export function Agent() {
         {isRunning && messages[messages.length - 1]?.role !== "assistant" && (
           <div className="flex items-center gap-2 text-[12px] text-zinc-400">
             <Loader2 size={14} className="animate-spin" />
-            Thinking...
+            Réflexion en cours...
           </div>
         )}
       </div>
@@ -206,7 +206,7 @@ export function Agent() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask the agent..."
+            placeholder="Demande à l'agent..."
             disabled={isRunning}
             className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-md text-[13px] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:bg-white focus:border-violet-600 focus:ring-1 focus:ring-violet-600/20 transition-all disabled:opacity-50"
             autoFocus
@@ -258,7 +258,7 @@ function renderToolResult(_tool: string, result: unknown): React.ReactNode {
             ))}
             {tweets.length > 5 && (
               <div className="text-[10px] text-zinc-400 pl-4">
-                +{tweets.length - 5} more
+                +{tweets.length - 5} de plus
               </div>
             )}
           </div>
@@ -282,7 +282,7 @@ function renderToolResult(_tool: string, result: unknown): React.ReactNode {
     if (obj.success) {
       return (
         <div className="text-[11px] text-emerald-600 pl-3 font-medium">
-          Done {obj.tag ? `— tagged as "${obj.tag}"` : ""}
+          Fait {obj.tag ? `— tagué "${obj.tag}"` : ""}
         </div>
       );
     }
@@ -297,6 +297,6 @@ function renderToolResult(_tool: string, result: unknown): React.ReactNode {
       </pre>
     );
   } catch {
-    return <div className="text-[10px] text-red-500 pl-3">Failed to render result</div>;
+    return <div className="text-[10px] text-red-500 pl-3">Erreur d'affichage du résultat</div>;
   }
 }

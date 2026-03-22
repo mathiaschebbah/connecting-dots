@@ -7,16 +7,21 @@ import { FocusPanel } from "./components/FocusPanel";
 import { SettingsModal } from "./components/SettingsModal";
 import { UnifiedSearch } from "./components/UnifiedSearch";
 import { ApiKeyGate } from "./pages/ApiKeyGate";
+import { ActivityFeed } from "./components/ActivityFeed";
 import { River } from "./lenses/River";
 import { Clusters } from "./lenses/Clusters";
 import { Graph } from "./lenses/Graph";
 import { Boards } from "./lenses/Boards";
+import { Agent } from "./pages/Agent";
+import { Pinned } from "./pages/Pinned";
 
 const LENSES = {
   river: River,
   clusters: Clusters,
   graph: Graph,
   boards: Boards,
+  agent: Agent,
+  pinned: Pinned,
 } as const;
 
 function App() {
@@ -42,8 +47,9 @@ function App() {
 
   if (hasApiKey === null) {
     return (
-      <div className="h-screen w-screen bg-zinc-50 flex items-center justify-center">
-        <div className="w-4 h-4 border-2 border-zinc-200 border-t-zinc-900 rounded-full animate-spin" />
+      <div className="h-screen w-screen bg-zinc-50 flex flex-col items-center justify-center gap-3">
+        <div className="w-5 h-5 border-2 border-zinc-200 border-t-violet-600 rounded-full animate-spin" />
+        <span className="text-[12px] text-zinc-400">Initialisation du moteur de pensée...</span>
       </div>
     );
   }
@@ -66,6 +72,7 @@ function App() {
         <FocusPanel />
       </div>
 
+      <ActivityFeed />
       <UnifiedSearch />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

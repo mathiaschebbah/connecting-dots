@@ -13,6 +13,7 @@ interface Tweet {
   views: number;
   source: string;
   ai_category?: string | null;
+  ai_cluster?: string | null;
   ai_summary?: string | null;
   ai_type?: string | null;
   ai_topics?: string[];
@@ -20,6 +21,17 @@ interface Tweet {
 }
 
 const CAT_COLORS: Record<string, string> = {
+  "ai/ml": "#7C3AED",
+  "dev-tools": "#0891B2",
+  "web": "#2563EB",
+  "crypto": "#059669",
+  "design": "#DB2777",
+  "science": "#D97706",
+  "business": "#EA580C",
+  "politics": "#DC2626",
+  "culture": "#65A30D",
+  "other": "#71717A",
+  // Legacy support
   AI: "#7C3AED",
   "Dev Tools": "#0891B2",
   "Web Dev": "#2563EB",
@@ -34,16 +46,18 @@ const CAT_COLORS: Record<string, string> = {
 };
 
 const TYPE_CONFIG: Record<string, { icon: typeof Zap; label: string; signal: "high" | "mid" | "low" }> = {
-  tutorial: { icon: BookOpen, label: "Tutorial", signal: "high" },
-  announcement: { icon: Megaphone, label: "Announcement", signal: "high" },
-  showcase: { icon: Lightbulb, label: "Showcase", signal: "high" },
+  tutorial: { icon: BookOpen, label: "Tutoriel", signal: "high" },
+  announcement: { icon: Megaphone, label: "Annonce", signal: "high" },
+  showcase: { icon: Lightbulb, label: "Démo", signal: "high" },
   thread: { icon: MessageSquare, label: "Thread", signal: "high" },
-  news: { icon: Newspaper, label: "News", signal: "mid" },
+  resource: { icon: BookOpen, label: "Ressource", signal: "high" },
+  alpha: { icon: Zap, label: "Alpha", signal: "high" },
+  news: { icon: Newspaper, label: "Actu", signal: "mid" },
   discussion: { icon: MessageSquare, label: "Discussion", signal: "mid" },
   question: { icon: MessageSquare, label: "Question", signal: "mid" },
   opinion: { icon: Zap, label: "Opinion", signal: "low" },
   meme: { icon: Zap, label: "Meme", signal: "low" },
-  personal: { icon: Zap, label: "Personal", signal: "low" },
+  personal: { icon: Zap, label: "Perso", signal: "low" },
 };
 
 function fmt(n: number): string {
@@ -86,113 +100,119 @@ export function TweetCard({ tweet, compact }: { tweet: Tweet; compact?: boolean 
   const typeConf = tweet.ai_type ? TYPE_CONFIG[tweet.ai_type] : null;
   const signal = getSignalLevel(tweet);
   const hasSummary = tweet.ai_summary && tweet.ai_summary.length > 5;
+  const isHighSignal = signal === "high";
+  const isLowSignal = signal === "low";
 
   return (
     <div
-      className="bg-white border border-zinc-200 rounded-lg p-4 hover:border-zinc-300 transition-colors cursor-pointer border-l-2"
+      className={`group relative flex flex-col gap-4 rounded-xl border border-zinc-200/60 p-4 shadow-sm transition-all duration-200 ease-out hover:scale-[1.01] hover:shadow-md hover:border-zinc-300 cursor-pointer ${
+        isHighSignal ? "border-l-[3px]" : "border-l border-l-zinc-200/60"
+      } ${isLowSignal ? "bg-zinc-50/50 opacity-70 grayscale-[0.2] hover:opacity-100 hover:grayscale-0" : "bg-white"}`}
       style={{ borderLeftColor: catColor || "transparent" }}
     >
-      <div className="flex items-start gap-3">
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-semibold shrink-0"
-          style={{ backgroundColor: avatarColor + "15", color: avatarColor }}
-        >
-          {tweet.author_handle[0]?.toUpperCase()}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          {/* Header: author + meta */}
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-[13px] font-medium text-zinc-900 truncate">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 shadow-inner ring-1 ring-black/5"
+            style={{ backgroundColor: avatarColor + "15", color: avatarColor }}
+          >
+            {tweet.author_handle[0]?.toUpperCase()}
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="text-[13px] font-semibold text-zinc-900 truncate leading-none mb-1">
               {tweet.author_name || tweet.author_handle}
             </span>
-            <span className="text-[12px] text-zinc-400 truncate">
+            <span className="text-[11px] text-zinc-400 font-medium truncate leading-none">
               @{tweet.author_handle}
             </span>
-            <span className="text-[11px] text-zinc-300 ml-auto shrink-0">
-              {timeAgo(tweet.created_at)}
-            </span>
           </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {isHighSignal && (
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" title="Contenu signal fort" />
+          )}
+          <span className="text-[11px] text-zinc-400 font-medium whitespace-nowrap">
+            {timeAgo(tweet.created_at)}
+          </span>
+        </div>
+      </div>
 
-          {/* AI Summary (primary) or content (fallback) */}
-          {hasSummary ? (
-            <>
-              <p className="text-[13px] text-zinc-800 font-medium leading-relaxed mb-1">
-                {tweet.ai_summary}
-              </p>
-              <p className={`text-[12px] text-zinc-400 leading-relaxed ${compact ? "line-clamp-1" : "line-clamp-2"}`}>
-                {tweet.content}
-              </p>
-            </>
-          ) : (
-            <p className={`text-[13px] text-zinc-700 leading-relaxed ${compact ? "line-clamp-2" : "line-clamp-4"}`}>
+      <div className="space-y-2">
+        {hasSummary ? (
+          <div className="space-y-2">
+            <p className="text-[14px] text-zinc-900 font-medium leading-snug tracking-tight">
+              {tweet.ai_summary}
+            </p>
+            <p className={`text-[12px] text-zinc-400 leading-relaxed ${compact ? "line-clamp-1" : "line-clamp-2"}`}>
               {tweet.content}
             </p>
-          )}
-
-          {/* Topics */}
-          {tweet.ai_topics && tweet.ai_topics.length > 0 && !compact && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {tweet.ai_topics.slice(0, 4).map((topic) => (
-                <span key={topic} className="text-[10px] text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-50 border border-zinc-100">
-                  {topic}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Footer: category + type + signal + engagement */}
-          <div className="flex items-center gap-2 mt-2 text-[11px]">
-            {catColor && (
-              <span
-                className="inline-flex items-center gap-1 font-medium px-1.5 py-0.5 rounded"
-                style={{ backgroundColor: catColor + "10", color: catColor }}
-              >
-                {tweet.ai_category}
-              </span>
-            )}
-            {typeConf && (
-              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                signal === "high" ? "bg-emerald-50 text-emerald-700" :
-                signal === "mid" ? "bg-zinc-100 text-zinc-600" :
-                "bg-zinc-50 text-zinc-400"
-              }`}>
-                <typeConf.icon size={10} />
-                {typeConf.label}
-              </span>
-            )}
-
-            <div className="flex items-center gap-3 ml-auto text-zinc-400">
-              {tweet.has_media && (
-                <span className="flex items-center gap-1 text-zinc-300">
-                  <ImageIcon size={12} />
-                </span>
-              )}
-              <span className="flex items-center gap-1 hover:text-red-500 cursor-pointer transition-colors">
-                <Heart size={12} /> {fmt(tweet.likes)}
-              </span>
-              <span className="flex items-center gap-1 hover:text-emerald-600 cursor-pointer transition-colors">
-                <Repeat2 size={12} /> {fmt(tweet.retweets)}
-              </span>
-              <span className="flex items-center gap-1 hover:text-violet-600 cursor-pointer transition-colors">
-                <MessageCircle size={12} /> {fmt(tweet.replies_count)}
-              </span>
-              {tweet.views > 0 && (
-                <span className="flex items-center gap-1">
-                  <Eye size={12} /> {fmt(tweet.views)}
-                </span>
-              )}
-              {tweet.tweet_url && (
-                <a
-                  href={tweet.tweet_url} target="_blank" rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex items-center gap-1 hover:text-violet-600 transition-colors"
-                >
-                  <ExternalLink size={11} />
-                </a>
-              )}
-            </div>
           </div>
+        ) : (
+          <p className={`text-[13px] text-zinc-700 leading-relaxed font-medium ${compact ? "line-clamp-2" : "line-clamp-4"}`}>
+            {tweet.content}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {tweet.ai_cluster && catColor && (
+          <span
+            className="text-[11px] font-bold px-2.5 py-1 rounded-full border border-current/10"
+            style={{ backgroundColor: catColor + "10", color: catColor }}
+          >
+            {tweet.ai_cluster}
+          </span>
+        )}
+        {typeConf && (
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+            isHighSignal ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-zinc-100 text-zinc-600 border border-zinc-200/50"
+          }`}>
+            <typeConf.icon size={11} className={isHighSignal ? "text-emerald-500" : "text-zinc-400"} />
+            {typeConf.label}
+          </span>
+        )}
+        {tweet.ai_topics && tweet.ai_topics.length > 0 && !compact &&
+          tweet.ai_topics.slice(0, 3).map((topic) => (
+            <span key={topic} className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-zinc-50 text-zinc-500 border border-zinc-100 hover:bg-zinc-100 transition-colors">
+              {topic}
+            </span>
+          ))
+        }
+      </div>
+
+      <div className="flex items-center justify-between pt-3 mt-1 border-t border-zinc-100/80">
+        <div className="flex items-center gap-4 text-zinc-400 font-medium">
+          <span className="flex items-center gap-1.5 hover:text-red-500 transition-colors cursor-pointer group/stat">
+            <Heart size={13} className="group-hover/stat:fill-red-500 transition-all" />
+            <span className="text-[11px]">{fmt(tweet.likes)}</span>
+          </span>
+          <span className="flex items-center gap-1.5 hover:text-emerald-600 transition-colors cursor-pointer">
+            <Repeat2 size={13} />
+            <span className="text-[11px]">{fmt(tweet.retweets)}</span>
+          </span>
+          <span className="flex items-center gap-1.5 hover:text-violet-600 transition-colors cursor-pointer">
+            <MessageCircle size={13} />
+            <span className="text-[11px]">{fmt(tweet.replies_count)}</span>
+          </span>
+          {tweet.views > 0 && (
+            <span className="flex items-center gap-1.5 opacity-60">
+              <Eye size={13} />
+              <span className="text-[11px]">{fmt(tweet.views)}</span>
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          {tweet.has_media && <ImageIcon size={13} className="text-zinc-300" />}
+          {tweet.tweet_url && (
+            <a
+              href={tweet.tweet_url} target="_blank" rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-zinc-300 hover:text-violet-600 transition-colors"
+            >
+              <ExternalLink size={13} />
+            </a>
+          )}
         </div>
       </div>
     </div>
@@ -203,16 +223,17 @@ export function TweetCard({ tweet, compact }: { tweet: Tweet; compact?: boolean 
 export function TweetRow({ tweet }: { tweet: Tweet }) {
   const catColor = tweet.ai_category ? CAT_COLORS[tweet.ai_category] || CAT_COLORS.Other : null;
   const signal = getSignalLevel(tweet);
+  const displayLabel = tweet.ai_cluster || tweet.ai_category;
 
   return (
     <div
       className="flex items-center gap-3 px-3 py-2 bg-white border border-zinc-200 rounded-md hover:border-zinc-300 transition-colors cursor-pointer border-l-2"
       style={{ borderLeftColor: catColor || "transparent" }}
     >
-      {catColor && (
-        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 w-20 text-center truncate"
+      {displayLabel && catColor && (
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 max-w-28 text-center truncate"
           style={{ backgroundColor: catColor + "10", color: catColor }}>
-          {tweet.ai_category}
+          {displayLabel}
         </span>
       )}
       {!catColor && <span className="w-20 shrink-0" />}

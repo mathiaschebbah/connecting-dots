@@ -29,20 +29,27 @@ export function FocusPanel() {
     <AnimatePresence mode="wait">
       <motion.div
         key={current.id}
-        initial={{ x: 40, opacity: 0 }}
+        initial={{ x: 440, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        exit={{ x: 40, opacity: 0 }}
-        transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-        className="w-[380px] border-l border-zinc-200 bg-white shrink-0 overflow-hidden flex flex-col"
+        exit={{ x: 440, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className="w-[440px] bg-white border-l border-zinc-200/60 rounded-l-2xl shadow-lg shrink-0 overflow-hidden flex flex-col relative z-20"
       >
-        {/* Back indicator */}
+        {/* Premium Navigation Header */}
         {focusStack.length > 1 && (
-          <button
-            onClick={popFocus}
-            className="px-4 py-1.5 text-[11px] text-violet-600 font-medium border-b border-zinc-100 hover:bg-zinc-50 transition-colors text-left"
-          >
-            Back
-          </button>
+          <div className="px-6 py-4 border-b border-zinc-100/60 bg-zinc-50/30">
+            <button
+              onClick={popFocus}
+              className="group flex items-center gap-2.5 text-[13px] text-zinc-500 hover:text-zinc-900 transition-all duration-200 ease-out font-medium"
+            >
+              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-white group-hover:bg-zinc-100 border border-zinc-200/60 shadow-sm transition-colors">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </div>
+              Retour
+            </button>
+          </div>
         )}
 
         {/* Content */}

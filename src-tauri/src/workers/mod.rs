@@ -1,4 +1,5 @@
 pub mod enricher;
+pub mod link_resolver;
 pub mod poller;
 
 use crate::db::Database;
@@ -60,5 +61,11 @@ pub fn start_all(db: Arc<Database>, embedder: Arc<Embedder>, api_key: Option<Str
     if let Some(key) = api_key {
         let handle = app_handle.clone();
         tauri::async_runtime::spawn(enricher::enrich_loop_with_events(db.clone(), key, handle));
+    }
+
+    // Boucle 5: link resolver (~30s)
+    {
+        let handle = app_handle.clone();
+        tauri::async_runtime::spawn(link_resolver::resolve_loop_with_events(db.clone(), handle));
     }
 }

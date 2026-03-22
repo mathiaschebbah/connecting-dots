@@ -77,6 +77,7 @@ pub fn run() {
             commands::search_semantic,
             commands::get_tweet_count,
             commands::embed_pending,
+            commands::reset_enrichments,
             commands::check_api_key,
             commands::set_api_key,
             commands::get_tweet_detail,
@@ -86,6 +87,9 @@ pub fn run() {
             commands::send_agent_message,
             commands::get_network_graph,
             commands::list_tweets_by_category,
+            commands::list_tweets_by_cluster,
+            commands::get_cluster_stats,
+            commands::get_thread,
             commands::get_dashboard_stats,
             // Projects
             commands::list_projects,

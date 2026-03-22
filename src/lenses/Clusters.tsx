@@ -4,97 +4,110 @@ import { useAppStore } from "../stores/appStore";
 import { TweetCard, CAT_COLORS, type Tweet } from "../components/TweetCard";
 import { ChevronLeft } from "lucide-react";
 
-interface CategoryCount {
-  name: string;
+interface ClusterStat {
+  cluster: string;
+  category: string | null;
   count: number;
 }
 
-interface DashboardStats {
-  total_tweets: number;
-  total_bookmarks: number;
-  enriched_count: number;
-  pending_enrichment: number;
-  pending_embedding: number;
-  categories: CategoryCount[];
-  top_topics: [string, number][];
-}
-
 export function Clusters() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [tweetsByCat, setTweetsByCat] = useState<Record<string, Tweet[]>>({});
-  const [expandedCat, setExpandedCat] = useState<string | null>(null);
+  const [clusters, setClusters] = useState<ClusterStat[]>([]);
+  const [tweetsByCluster, setTweetsByCluster] = useState<Record<string, Tweet[]>>({});
+  const [expandedCluster, setExpandedCluster] = useState<string | null>(null);
   const [expandedTweets, setExpandedTweets] = useState<Tweet[]>([]);
+  const [loading, setLoading] = useState(true);
   const pushFocus = useAppStore((s) => s.pushFocus);
   const activeCategory = useAppStore((s) => s.activeCategory);
 
   const load = async () => {
     try {
-      const s = await invoke<DashboardStats>("get_dashboard_stats");
-      setStats(s);
+      const stats = await invoke<ClusterStat[]>("get_cluster_stats");
+      setClusters(stats);
 
-      // Load top tweets per category using the proper filter
+      // Load top 5 tweets per cluster in parallel (top 20 clusters)
+      const top = stats.slice(0, 20);
+      const results = await Promise.all(
+        top.map((cs) => invoke<Tweet[]>("list_tweets_by_cluster", { cluster: cs.cluster, limit: 5 })
+          .then((tweets) => ({ cluster: cs.cluster, tweets }))
+          .catch(() => ({ cluster: cs.cluster, tweets: [] as Tweet[] }))
+        )
+      );
       const map: Record<string, Tweet[]> = {};
-      for (const cat of s.categories) {
-        const tweets = await invoke<Tweet[]>("list_tweets_by_category", { category: cat.name, limit: 5 });
-        map[cat.name] = tweets;
-      }
-      setTweetsByCat(map);
+      for (const r of results) map[r.cluster] = r.tweets;
+      setTweetsByCluster(map);
     } catch (e) {
       console.error(e);
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => { load(); }, []);
 
-  const expandCategory = async (catName: string) => {
-    setExpandedCat(catName);
+  const expandCluster = async (clusterName: string) => {
+    setExpandedCluster(clusterName);
     try {
-      const tweets = await invoke<Tweet[]>("list_tweets_by_category", { category: catName, limit: 200 });
+      const tweets = await invoke<Tweet[]>("list_tweets_by_cluster", { cluster: clusterName, limit: 200 });
       setExpandedTweets(tweets);
     } catch (e) {
       console.error(e);
     }
   };
 
-  if (!stats || stats.categories.length === 0) {
+  if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-[13px] text-zinc-500">Waiting for enrichment...</p>
-          <p className="text-[12px] text-zinc-400 mt-1">Tweets are being categorized by the AI. Clusters will appear here.</p>
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-5 h-5 border-2 border-zinc-200 border-t-violet-600 rounded-full animate-spin" />
+          <p className="text-[12px] text-zinc-400">Chargement des clusters...</p>
         </div>
       </div>
     );
   }
 
-  // Filter categories if Topic Ribbon active
-  const visibleCategories = activeCategory
-    ? stats.categories.filter((c) => c.name === activeCategory)
-    : stats.categories;
+  if (clusters.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-[13px] text-zinc-500">En attente d'enrichissement...</p>
+          <p className="text-[12px] text-zinc-400 mt-1">Les posts sont catégorisés par l'IA. Les clusters apparaîtront ici.</p>
+        </div>
+      </div>
+    );
+  }
 
-  // Expanded single-category view
-  if (expandedCat) {
-    const color = CAT_COLORS[expandedCat] || "#71717A";
+  // Filter by activeCategory if set
+  const visibleClusters = activeCategory
+    ? clusters.filter((c) => c.category === activeCategory)
+    : clusters;
+
+  // Expanded single-cluster view
+  if (expandedCluster) {
+    const cs = clusters.find((c) => c.cluster === expandedCluster);
+    const color = cs?.category ? CAT_COLORS[cs.category] || "#71717A" : "#71717A";
     return (
       <div className="h-full overflow-y-auto px-6 py-4">
         <div className="max-w-3xl mx-auto">
           <button
-            onClick={() => { setExpandedCat(null); setExpandedTweets([]); }}
+            onClick={() => { setExpandedCluster(null); setExpandedTweets([]); }}
             className="flex items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-900 mb-3 transition-colors"
           >
-            <ChevronLeft size={14} /> All clusters
+            <ChevronLeft size={14} /> Tous les clusters
           </button>
           <div className="flex items-center gap-2 mb-4">
             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
             <h2 className="text-lg font-semibold tracking-tight" style={{ color }}>
-              {expandedCat}
+              {expandedCluster}
             </h2>
+            {cs?.category && (
+              <span className="text-[11px] text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-100">{cs.category}</span>
+            )}
             <span className="text-[13px] text-zinc-400">{expandedTweets.length}</span>
           </div>
-          <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
             {expandedTweets.map((t) => (
               <div key={t.id} onClick={() => pushFocus({ type: "tweet", id: t.id })}>
-                <TweetCard tweet={t} />
+                <TweetCard tweet={t} compact />
               </div>
             ))}
           </div>
@@ -103,39 +116,69 @@ export function Clusters() {
     );
   }
 
+  // Group clusters by domain for visual organization
+  const domainGroups = new Map<string, ClusterStat[]>();
+  visibleClusters.forEach((cs) => {
+    const domain = cs.category || "other";
+    const arr = domainGroups.get(domain) || [];
+    arr.push(cs);
+    domainGroups.set(domain, arr);
+  });
+
   return (
-    <div className="h-full overflow-x-auto overflow-y-auto p-4">
-      <div className="flex gap-3 min-h-full">
-        {visibleCategories.map((cat) => {
-          const color = CAT_COLORS[cat.name] || "#71717A";
-          const tweets = tweetsByCat[cat.name] || [];
+    <div className="h-full overflow-x-auto overflow-y-auto p-5">
+      <div className="flex gap-4 min-h-full">
+        {[...domainGroups.entries()].map(([domain, domainClusters]) => {
+          const color = CAT_COLORS[domain] || "#71717A";
           return (
-            <div key={cat.name} className="w-[300px] shrink-0 flex flex-col">
+            <div key={domain} className="w-[320px] shrink-0 flex flex-col">
+              {/* Domain header */}
               <div
-                className="flex items-center gap-2 px-3 py-2 rounded-t-lg border border-zinc-200 border-b-0 bg-white border-l-2"
+                className="flex items-center gap-2.5 px-4 py-3 rounded-t-xl bg-white border border-zinc-200/60 border-b-0 shadow-sm border-l-[3px]"
                 style={{ borderLeftColor: color }}
               >
-                <span className="text-[13px] font-medium text-zinc-900">{cat.name}</span>
-                <span className="text-[11px] text-zinc-400 ml-auto">{cat.count}</span>
+                <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: color }} />
+                <span className="text-[12px] font-bold text-zinc-600 uppercase tracking-wider">{domain}</span>
+                <span className="px-1.5 py-0.5 bg-zinc-100 text-zinc-400 text-[10px] rounded-full font-bold ml-auto">
+                  {domainClusters.reduce((s, c) => s + c.count, 0)}
+                </span>
               </div>
 
-              <div className="flex-1 bg-zinc-50 border border-zinc-200 rounded-b-lg p-2 space-y-2 overflow-y-auto">
-                {tweets.map((t) => (
-                  <div key={t.id} onClick={() => pushFocus({ type: "tweet", id: t.id })}>
-                    <TweetCard tweet={t} compact />
-                  </div>
-                ))}
-                {tweets.length === 0 && (
-                  <div className="text-[11px] text-zinc-400 py-4 text-center">Loading...</div>
-                )}
-                {cat.count > 5 && (
-                  <button
-                    onClick={() => expandCategory(cat.name)}
-                    className="w-full py-2 text-[11px] text-violet-600 font-medium hover:bg-zinc-100 rounded-md transition-colors"
-                  >
-                    +{cat.count - tweets.length} more
-                  </button>
-                )}
+              {/* Clusters within domain */}
+              <div className="flex-1 bg-zinc-50/50 border border-zinc-200/60 border-t-0 rounded-b-xl p-3 space-y-4 overflow-y-auto">
+                {domainClusters.map((cs) => {
+                  const tweets = tweetsByCluster[cs.cluster] || [];
+                  return (
+                    <div key={cs.cluster}>
+                      {/* Cluster sub-header */}
+                      <button
+                        onClick={() => expandCluster(cs.cluster)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 mb-2 rounded-lg hover:bg-white hover:shadow-sm transition-all duration-200 text-left"
+                      >
+                        <span className="text-[12px] font-semibold text-zinc-700">{cs.cluster}</span>
+                        <span className="px-1.5 py-0.5 bg-zinc-100 text-zinc-400 text-[10px] rounded-full font-bold ml-auto">{cs.count}</span>
+                      </button>
+
+                      {/* Top tweets */}
+                      <div className="space-y-2">
+                        {tweets.slice(0, 3).map((t) => (
+                          <div key={t.id} onClick={() => pushFocus({ type: "tweet", id: t.id })}>
+                            <TweetCard tweet={t} compact />
+                          </div>
+                        ))}
+                      </div>
+
+                      {cs.count > 3 && (
+                        <button
+                          onClick={() => expandCluster(cs.cluster)}
+                          className="w-full py-1.5 text-[11px] text-violet-600 font-semibold hover:bg-violet-50 rounded-lg transition-all duration-200 mt-2"
+                        >
+                          +{cs.count - Math.min(tweets.length, 3)} de plus
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );

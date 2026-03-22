@@ -28,10 +28,14 @@ interface TweetFull {
   views: number;
   source: string;
   ai_category: string | null;
+  ai_cluster: string | null;
   ai_summary: string | null;
   ai_topics: string[];
   ai_type: string | null;
   has_embedding: boolean;
+  resolved_content: string | null;
+  resolved_author: string | null;
+  resolved_url: string | null;
 }
 
 interface SimilarTweet {
@@ -68,6 +72,23 @@ interface TweetDetailResult {
   tags: TagData[];
 }
 
+interface ThreadTweet {
+  id: string;
+  author_handle: string;
+  author_name: string | null;
+  content: string;
+  created_at: string | null;
+  tweet_url: string | null;
+  likes: number;
+  retweets: number;
+  replies_count: number;
+  views: number;
+}
+
+interface ThreadData {
+  tweets: ThreadTweet[];
+}
+
 function fmt(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
@@ -102,11 +123,23 @@ export function TweetDetail({ tweetId, onClose, onNavigate }: Props) {
   const [newNote, setNewNote] = useState("");
   const [editingNote, setEditingNote] = useState<number | null>(null);
   const [editNoteContent, setEditNoteContent] = useState("");
+  const [thread, setThread] = useState<ThreadTweet[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
 
   const loadDetail = () => {
     setLoading(true);
     invoke<TweetDetailResult>("get_tweet_detail", { tweetId })
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        // Load thread if tweet is part of a conversation
+        if (d.tweet.conversation_id || d.tweet.reply_to_id) {
+          setThreadLoading(true);
+          invoke<ThreadData>("get_thread", { tweetId: d.tweet.conversation_id || tweetId })
+            .then((t) => setThread(t.tweets))
+            .catch(() => setThread([]))
+            .finally(() => setThreadLoading(false));
+        }
+      })
       .catch((e) => console.error("Failed to load tweet:", e))
       .finally(() => setLoading(false));
   };
@@ -177,6 +210,7 @@ export function TweetDetail({ tweetId, onClose, onNavigate }: Props) {
   return (
     <DetailContent
       data={data} onClose={onClose} onNavigate={onNavigate}
+      tweetId={tweetId} thread={thread} threadLoading={threadLoading}
       newTag={newTag} setNewTag={setNewTag} addTag={addTag} removeTag={removeTag}
       notes={notes} newNote={newNote} setNewNote={setNewNote} addNote={addNote}
       editingNote={editingNote} editNoteContent={editNoteContent}
@@ -263,10 +297,13 @@ function QuotedTweetCard({ json }: { json: string }) {
   );
 }
 
-function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, removeTag, notes, newNote, setNewNote, addNote, editingNote, editNoteContent, setEditingNote, setEditNoteContent, saveEditNote, deleteNote }: {
+function DetailContent({ data, onClose, onNavigate, tweetId, thread, threadLoading, newTag, setNewTag, addTag, removeTag, notes, newNote, setNewNote, addNote, editingNote, editNoteContent, setEditingNote, setEditNoteContent, saveEditNote, deleteNote }: {
   data: TweetDetailResult;
   onClose: () => void;
   onNavigate?: (id: string) => void;
+  tweetId: string;
+  thread: ThreadTweet[];
+  threadLoading: boolean;
   newTag: string;
   setNewTag: (v: string) => void;
   addTag: () => void;
@@ -309,17 +346,110 @@ function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, r
         </button>
       </div>
 
-      {/* Reply info */}
-      {tweet.reply_to_handle && (
-        <div className="text-[11px] text-zinc-500 mb-2">
-          Replying to <span className="text-violet-600 font-medium">@{tweet.reply_to_handle}</span>
+      {/* Thread context — parent tweets above */}
+      {thread.length > 1 && (
+        <div className="mb-4 -mx-5 px-5 py-3 bg-zinc-50 border-y border-zinc-100">
+          <div className="text-[11px] font-medium text-zinc-400 mb-2">Fil ({thread.length} posts)</div>
+          <div className="space-y-0">
+            {thread.map((t, i) => {
+              const isCurrent = t.id === tweetId;
+              const avatarCol = getInitialColor(t.author_handle);
+              return (
+                <div key={t.id} className="flex gap-3">
+                  {/* Thread line */}
+                  <div className="flex flex-col items-center shrink-0">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${isCurrent ? "ring-2 ring-violet-400" : ""}`}
+                      style={{ backgroundColor: avatarCol + "15", color: avatarCol }}
+                    >
+                      {t.author_handle[0]?.toUpperCase()}
+                    </div>
+                    {i < thread.length - 1 && <div className="w-px flex-1 bg-zinc-200 my-0.5" />}
+                  </div>
+                  {/* Tweet content */}
+                  <div
+                    className={`flex-1 pb-3 ${isCurrent ? "" : "cursor-pointer hover:bg-zinc-100 -mx-2 px-2 rounded-md"}`}
+                    onClick={() => !isCurrent && onNavigate?.(t.id)}
+                  >
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className={`text-[12px] font-medium ${isCurrent ? "text-zinc-900" : "text-zinc-600"}`}>
+                        {t.author_name || t.author_handle}
+                      </span>
+                      <span className="text-[11px] text-zinc-400">@{t.author_handle}</span>
+                    </div>
+                    <p className={`text-[13px] leading-relaxed ${isCurrent ? "text-zinc-900 font-medium" : "text-zinc-500"}`}>
+                      {t.content}
+                    </p>
+                    {isCurrent && (
+                      <div className="flex items-center gap-3 text-[10px] text-zinc-400 mt-1">
+                        <span>{fmt(t.likes)} j'aime</span>
+                        <span>{fmt(t.retweets)} RT</span>
+                        <span>{fmt(t.replies_count)} rép.</span>
+                        {t.views > 0 && <span>{fmt(t.views)} vues</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {threadLoading && (
+            <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-2">
+              <div className="w-3 h-3 border border-zinc-300 border-t-violet-500 rounded-full animate-spin" />
+              Chargement du thread...
+            </div>
+          )}
         </div>
       )}
 
-      {/* Content — the most important thing */}
-      <p className="text-[14px] text-zinc-800 leading-[1.65] mb-3 whitespace-pre-wrap">
-        {tweet.content}
-      </p>
+      {/* Reply info (when no thread loaded) */}
+      {thread.length <= 1 && tweet.reply_to_handle && (
+        <div className="text-[11px] text-zinc-500 mb-2">
+          En réponse à <span className="text-violet-600 font-medium">@{tweet.reply_to_handle}</span>
+        </div>
+      )}
+
+      {/* Content — only shown when no thread (thread shows it inline) */}
+      {thread.length <= 1 && (
+        <p className="text-[14px] text-zinc-800 leading-[1.65] mb-3 whitespace-pre-wrap">
+          {tweet.content}
+        </p>
+      )}
+
+      {/* Resolved content (for link-only tweets) */}
+      {tweet.resolved_content && tweet.resolved_content !== "[failed to resolve]" && (
+        <div className="mb-3 p-3 border border-zinc-200 rounded-lg bg-zinc-50/50">
+          {tweet.resolved_author && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <div
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold shrink-0"
+                style={{ backgroundColor: getInitialColor(tweet.resolved_author) + "15", color: getInitialColor(tweet.resolved_author) }}
+              >
+                {tweet.resolved_author[0]?.toUpperCase()}
+              </div>
+              <span className="text-[12px] font-medium text-zinc-700">@{tweet.resolved_author}</span>
+              {tweet.resolved_url && (
+                <a href={tweet.resolved_url} target="_blank" rel="noopener noreferrer"
+                  className="ml-auto text-violet-600 hover:text-violet-800 transition-colors">
+                  <ExternalLink size={11} />
+                </a>
+              )}
+            </div>
+          )}
+          {!tweet.resolved_author && tweet.resolved_url && (
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <ExternalLink size={11} className="text-zinc-400" />
+              <a href={tweet.resolved_url} target="_blank" rel="noopener noreferrer"
+                className="text-[11px] text-violet-600 font-medium hover:underline truncate">
+                {tweet.resolved_url}
+              </a>
+            </div>
+          )}
+          <p className="text-[12px] text-zinc-600 leading-relaxed whitespace-pre-wrap line-clamp-12">
+            {tweet.resolved_content}
+          </p>
+        </div>
+      )}
 
       {/* Media */}
       {tweet.media_json && <TweetMedia mediaJson={tweet.media_json} />}
@@ -331,10 +461,10 @@ function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, r
       <div className="flex items-center gap-3 text-[11px] text-zinc-400 mb-4">
         <span>{formatDate(tweet.created_at)}</span>
         <span className="text-zinc-200">·</span>
-        <span>{fmt(tweet.likes)} likes</span>
+        <span>{fmt(tweet.likes)} j'aime</span>
         <span>{fmt(tweet.retweets)} RT</span>
-        <span>{fmt(tweet.replies_count)} replies</span>
-        {tweet.views > 0 && <span>{fmt(tweet.views)} views</span>}
+        <span>{fmt(tweet.replies_count)} réponses</span>
+        {tweet.views > 0 && <span>{fmt(tweet.views)} vues</span>}
       </div>
 
       {/* AI Insight — second most important, prominent */}
@@ -344,7 +474,13 @@ function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, r
           style={{ borderLeftColor: catColor!, backgroundColor: catColor + "06" }}
         >
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[12px] font-semibold" style={{ color: catColor! }}>
+            {tweet.ai_cluster && (
+              <span className="text-[12px] font-semibold" style={{ color: catColor! }}>
+                {tweet.ai_cluster}
+              </span>
+            )}
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${tweet.ai_cluster ? "bg-white border border-zinc-200 text-zinc-400" : "font-semibold"}`}
+              style={!tweet.ai_cluster ? { color: catColor! } : {}}>
               {tweet.ai_category}
             </span>
             {tweet.ai_type && (
@@ -392,7 +528,7 @@ function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, r
         <form onSubmit={(e) => { e.preventDefault(); addTag(); }} className="flex gap-1.5">
           <input
             type="text" value={newTag} onChange={(e) => setNewTag(e.target.value)}
-            placeholder="Add tag..."
+            placeholder="Ajouter un tag..."
             className="flex-1 px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-[12px] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:bg-white focus:border-violet-600 focus:ring-1 focus:ring-violet-600/20 transition-all"
           />
           {newTag.trim() && (
@@ -421,8 +557,8 @@ function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, r
                   rows={3} autoFocus
                 />
                 <div className="flex gap-1">
-                  <button onClick={() => saveEditNote(note.id)} className="px-2 py-1 bg-zinc-900 text-white rounded text-[10px] font-medium">Save</button>
-                  <button onClick={() => setEditingNote(null)} className="px-2 py-1 text-zinc-400 text-[10px]">Cancel</button>
+                  <button onClick={() => saveEditNote(note.id)} className="px-2 py-1 bg-zinc-900 text-white rounded text-[10px] font-medium">Sauver</button>
+                  <button onClick={() => setEditingNote(null)} className="px-2 py-1 text-zinc-400 text-[10px]">Annuler</button>
                 </div>
               </div>
             ) : (
@@ -441,7 +577,7 @@ function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, r
         <form onSubmit={(e) => { e.preventDefault(); addNote(); }} className="flex gap-1.5">
           <input
             type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)}
-            placeholder="Add a note..."
+            placeholder="Ajouter une note..."
             className="flex-1 px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-[12px] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:bg-white focus:border-violet-600 focus:ring-1 focus:ring-violet-600/20 transition-all"
           />
           {newNote.trim() && (
@@ -460,7 +596,7 @@ function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, r
             className="inline-flex items-center gap-1 text-[11px] text-violet-600 font-medium hover:bg-violet-50 px-2 py-1 rounded-md transition-colors"
           >
             <ExternalLink size={12} />
-            View on X
+            Voir sur X
           </a>
         </div>
       )}
@@ -469,7 +605,7 @@ function DetailContent({ data, onClose, onNavigate, newTag, setNewTag, addTag, r
       {similar.length > 0 && (
         <div className="border-t border-zinc-200 pt-4">
           <h4 className="text-[12px] font-medium text-zinc-500 mb-3">
-            Connected ({similar.length})
+            Connexions ({similar.length})
           </h4>
           <div className="space-y-1">
             {similar.map((t) => (

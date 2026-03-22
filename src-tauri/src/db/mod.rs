@@ -173,11 +173,11 @@ impl Database {
         Ok(())
     }
 
-    /// Get tweet IDs that have no embedding yet
+    /// Get tweet IDs that need embedding — uses resolved_content when available
     pub fn tweets_without_embedding(&self, limit: u32) -> Result<Vec<(String, String)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, content FROM tweets WHERE embedding IS NULL LIMIT ?1",
+            "SELECT id, COALESCE(resolved_content, content) FROM tweets WHERE embedding IS NULL LIMIT ?1",
         )?;
         let rows = stmt.query_map(rusqlite::params![limit], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -193,8 +193,8 @@ impl Database {
     pub fn search_semantic(&self, query_embedding: &[f32], limit: u32) -> Result<Vec<TweetRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
-                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_summary, t.ai_type, t.ai_topics,
+            "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
                     (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
              FROM tweets t
              JOIN tweets_vec v ON t.id = v.tweet_id
@@ -219,10 +219,11 @@ impl Database {
                     views: row.get(9)?,
                     source: row.get(10)?,
                     ai_category: row.get(11)?,
-                    ai_summary: row.get(12)?,
-                    ai_type: row.get(13)?,
-                    ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
-                    has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+                    ai_cluster: row.get(12)?,
+                    ai_summary: row.get(13)?,
+                    ai_type: row.get(14)?,
+                    ai_topics: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                    has_media: row.get::<_, i32>(16).unwrap_or(0) != 0,
                 })
             },
         )?;
@@ -252,14 +253,19 @@ impl Database {
     ) -> Result<Vec<TweetRow>> {
         let conn = self.conn.lock().unwrap();
 
-        let query = if source_filter.is_some() {
-            "SELECT id, author_handle, author_name, content, created_at,
-                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_summary, ai_type, ai_topics,
+        let query = if source_filter == Some("bookmark") {
+            "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
                     (media_json IS NOT NULL AND media_json != '[]') as has_media
-             FROM tweets WHERE source = ?3 ORDER BY bookmark_order ASC LIMIT ?1 OFFSET ?2"
+             FROM tweets WHERE source = 'bookmark' ORDER BY bookmark_order ASC LIMIT ?1 OFFSET ?2"
+        } else if source_filter.is_some() {
+            "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
+                    (media_json IS NOT NULL AND media_json != '[]') as has_media
+             FROM tweets WHERE source = ?3 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
         } else {
-            "SELECT id, author_handle, author_name, content, created_at,
-                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_summary, ai_type, ai_topics,
+            "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
                     (media_json IS NOT NULL AND media_json != '[]') as has_media
              FROM tweets ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
         };
@@ -280,15 +286,20 @@ impl Database {
                 views: row.get(9)?,
                 source: row.get(10)?,
                 ai_category: row.get(11)?,
-                ai_summary: row.get(12)?,
-                ai_type: row.get(13)?,
-                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
-                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+                ai_cluster: row.get(12)?,
+                ai_summary: row.get(13)?,
+                ai_type: row.get(14)?,
+                ai_topics: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(16).unwrap_or(0) != 0,
             })
         };
 
         let mut tweets = Vec::new();
-        if let Some(src) = source_filter {
+        if source_filter == Some("bookmark") {
+            // bookmark query has hardcoded source, no ?3 param
+            let rows = stmt.query_map(rusqlite::params![limit, offset], map_row)?;
+            for row in rows { tweets.push(row?); }
+        } else if let Some(src) = source_filter {
             let rows = stmt.query_map(rusqlite::params![limit, offset, src], map_row)?;
             for row in rows { tweets.push(row?); }
         } else {
@@ -308,8 +319,8 @@ impl Database {
         let conn = self.conn.lock().unwrap();
 
         let sql = if source_filter.is_some() {
-            "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
-                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_summary, t.ai_type, t.ai_topics,
+            "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
                     (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
              FROM tweets t
              JOIN tweets_fts fts ON t.rowid = fts.rowid
@@ -317,8 +328,8 @@ impl Database {
              ORDER BY rank
              LIMIT ?2"
         } else {
-            "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
-                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_summary, t.ai_type, t.ai_topics,
+            "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
                     (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
              FROM tweets t
              JOIN tweets_fts fts ON t.rowid = fts.rowid
@@ -343,10 +354,11 @@ impl Database {
                 views: row.get(9)?,
                 source: row.get(10)?,
                 ai_category: row.get(11)?,
-                ai_summary: row.get(12)?,
-                ai_type: row.get(13)?,
-                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
-                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+                ai_cluster: row.get(12)?,
+                ai_summary: row.get(13)?,
+                ai_type: row.get(14)?,
+                ai_topics: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(16).unwrap_or(0) != 0,
             })
         };
 
@@ -372,13 +384,14 @@ impl Database {
                     reply_to_id, reply_to_handle, is_retweet, retweeted_by,
                     media_json, quoted_tweet_json,
                     likes, retweets, replies_count, quotes, bookmarks_count, views,
-                    source, ai_category, ai_summary, ai_topics, ai_type, embedding
+                    source, ai_category, ai_cluster, ai_summary, ai_topics, ai_type, embedding,
+                    resolved_content, resolved_author, resolved_url
              FROM tweets WHERE id = ?1",
         )?;
         let result = stmt.query_row(rusqlite::params![tweet_id], |row| {
-            let embedding_blob: Option<Vec<u8>> = row.get(27)?;
+            let embedding_blob: Option<Vec<u8>> = row.get(28)?;
             let has_embedding = embedding_blob.is_some();
-            let topics_raw: Option<String> = row.get(25)?;
+            let topics_raw: Option<String> = row.get(26)?;
             let topics: Vec<String> = topics_raw
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default();
@@ -407,10 +420,14 @@ impl Database {
                 views: row.get(21)?,
                 source: row.get(22)?,
                 ai_category: row.get(23)?,
-                ai_summary: row.get(24)?,
+                ai_cluster: row.get(24)?,
+                ai_summary: row.get(25)?,
                 ai_topics: topics,
-                ai_type: row.get(26)?,
+                ai_type: row.get(27)?,
                 has_embedding,
+                resolved_content: row.get(29)?,
+                resolved_author: row.get(30)?,
+                resolved_url: row.get(31)?,
             })
         });
         match result {
@@ -504,11 +521,14 @@ impl Database {
         Ok(tags)
     }
 
-    /// Get tweets without AI metadata
+    /// Get tweets without AI metadata — uses resolved_content when available
     pub fn tweets_without_ai_metadata(&self, limit: u32) -> Result<Vec<(String, String)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, content FROM tweets WHERE ai_enriched_at IS NULL ORDER BY CASE WHEN source = 'bookmark' THEN 0 ELSE 1 END LIMIT ?1",
+            "SELECT id, COALESCE(resolved_content, content) FROM tweets
+             WHERE ai_enriched_at IS NULL
+             ORDER BY CASE WHEN source = 'bookmark' THEN 0 ELSE 1 END
+             LIMIT ?1",
         )?;
         let rows = stmt.query_map(rusqlite::params![limit], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -520,11 +540,25 @@ impl Database {
         Ok(results)
     }
 
+    /// Reset all AI enrichments to force re-processing (e.g. after prompt change)
+    pub fn reset_all_enrichments(&self) -> Result<u32> {
+        let conn = self.conn.lock().unwrap();
+        let count: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM tweets WHERE ai_enriched_at IS NOT NULL", [], |row| row.get(0)
+        )?;
+        conn.execute(
+            "UPDATE tweets SET ai_enriched_at = NULL, ai_category = NULL, ai_cluster = NULL, ai_summary = NULL, ai_topics = NULL, ai_type = NULL WHERE ai_enriched_at IS NOT NULL",
+            [],
+        )?;
+        Ok(count)
+    }
+
     /// Update AI metadata for a tweet
     pub fn update_ai_metadata(
         &self,
         tweet_id: &str,
         category: &str,
+        cluster: &str,
         summary: &str,
         topics: &str,
         tweet_type: &str,
@@ -532,10 +566,60 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
-            "UPDATE tweets SET ai_category = ?1, ai_summary = ?2, ai_topics = ?3, ai_type = ?4, ai_enriched_at = ?5 WHERE id = ?6",
-            rusqlite::params![category, summary, topics, tweet_type, now, tweet_id],
+            "UPDATE tweets SET ai_category = ?1, ai_cluster = ?2, ai_summary = ?3, ai_topics = ?4, ai_type = ?5, ai_enriched_at = ?6 WHERE id = ?7",
+            rusqlite::params![category, cluster, summary, topics, tweet_type, now, tweet_id],
         )?;
         Ok(())
+    }
+
+    /// Store resolved link content for a tweet.
+    /// Also invalidates embedding and AI metadata to force re-processing with the resolved content,
+    /// but only if the tweet didn't already have a good enrichment.
+    pub fn store_resolved_content(
+        &self,
+        tweet_id: &str,
+        content: &str,
+        author: Option<&str>,
+        url: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // Always store the resolved content
+        conn.execute(
+            "UPDATE tweets SET resolved_content = ?1, resolved_author = ?2, resolved_url = ?3 WHERE id = ?4",
+            rusqlite::params![content, author, url, tweet_id],
+        )?;
+        // Invalidate embedding + AI only if the tweet has no useful enrichment yet
+        // (i.e., it was enriched as "unknown"/"other" because the enricher only had a bare URL)
+        conn.execute(
+            "UPDATE tweets SET embedding = NULL, ai_enriched_at = NULL, ai_category = NULL,
+                    ai_cluster = NULL, ai_summary = NULL, ai_topics = NULL, ai_type = NULL
+             WHERE id = ?1 AND (ai_category IS NULL OR (ai_category = 'other' AND ai_cluster = 'unknown'))",
+            rusqlite::params![tweet_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get tweets that are primarily a link (short content) with no resolved content yet.
+    /// Only targets link-only tweets (< 100 chars) or tweets with a link and short surrounding text (< 200 chars).
+    /// Excludes tweets with substantial text content that happen to contain a link.
+    pub fn tweets_with_unresolved_links(&self, limit: u32) -> Result<Vec<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, content FROM tweets
+             WHERE resolved_content IS NULL
+             AND (content LIKE '%x.com/%/status/%'
+                  OR content LIKE '%twitter.com/%/status/%'
+                  OR content LIKE '%x.com/i/article/%'
+                  OR content LIKE '%t.co/%')
+             AND length(content) < 200
+             LIMIT ?1"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![limit], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut results = Vec::new();
+        for row in rows { results.push(row?); }
+        Ok(results)
     }
 
     // ── Projects ──
@@ -792,7 +876,7 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT t.id, t.author_handle, t.author_name, t.content, t.created_at,
-                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_summary, t.ai_type, t.ai_topics,
+                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
                     (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
              FROM tweets t
              JOIN tweet_groups tg ON t.id = tg.tweet_id
@@ -805,9 +889,10 @@ impl Database {
                 content: row.get(3)?, created_at: row.get(4)?, tweet_url: row.get(5)?,
                 likes: row.get(6)?, retweets: row.get(7)?, replies_count: row.get(8)?,
                 views: row.get(9)?, source: row.get(10)?, ai_category: row.get(11)?,
-                ai_summary: row.get(12)?, ai_type: row.get(13)?,
-                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
-                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+                ai_cluster: row.get(12)?,
+                ai_summary: row.get(13)?, ai_type: row.get(14)?,
+                ai_topics: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(16).unwrap_or(0) != 0,
             })
         })?;
         let mut tweets = Vec::new();
@@ -878,8 +963,8 @@ impl Database {
     pub fn get_account_tweets(&self, handle: &str, limit: u32) -> Result<Vec<TweetRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, author_handle, author_name, content, created_at,
-                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_summary, ai_type, ai_topics,
+            "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
                     (media_json IS NOT NULL AND media_json != '[]') as has_media
              FROM tweets WHERE author_handle = ?1 ORDER BY created_at DESC LIMIT ?2"
         )?;
@@ -889,10 +974,10 @@ impl Database {
                 content: row.get(3)?, created_at: row.get(4)?, tweet_url: row.get(5)?,
                 likes: row.get(6)?, retweets: row.get(7)?, replies_count: row.get(8)?,
                 views: row.get(9)?, source: row.get(10)?, ai_category: row.get(11)?,
-                ai_summary: row.get(12)?,
-                ai_type: row.get(13)?,
-                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
-                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+                ai_cluster: row.get(12)?,
+                ai_summary: row.get(13)?, ai_type: row.get(14)?,
+                ai_topics: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(16).unwrap_or(0) != 0,
             })
         })?;
         let mut tweets = Vec::new();
@@ -900,12 +985,58 @@ impl Database {
         Ok(tweets)
     }
 
+    /// List tweets filtered by ai_cluster
+    pub fn list_tweets_by_cluster(&self, cluster: &str, limit: u32) -> Result<Vec<TweetRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
+                    (media_json IS NOT NULL AND media_json != '[]') as has_media
+             FROM tweets WHERE ai_cluster = ?1 ORDER BY created_at DESC LIMIT ?2"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![cluster, limit], |row| {
+            Ok(TweetRow {
+                id: row.get(0)?, author_handle: row.get(1)?, author_name: row.get(2)?,
+                content: row.get(3)?, created_at: row.get(4)?, tweet_url: row.get(5)?,
+                likes: row.get(6)?, retweets: row.get(7)?, replies_count: row.get(8)?,
+                views: row.get(9)?, source: row.get(10)?, ai_category: row.get(11)?,
+                ai_cluster: row.get(12)?,
+                ai_summary: row.get(13)?, ai_type: row.get(14)?,
+                ai_topics: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(16).unwrap_or(0) != 0,
+            })
+        })?;
+        let mut tweets = Vec::new();
+        for row in rows { tweets.push(row?); }
+        Ok(tweets)
+    }
+
+    /// Get cluster stats (cluster name + count + parent category)
+    pub fn get_cluster_stats(&self) -> Result<Vec<ClusterStat>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT ai_cluster, ai_category, COUNT(*) as cnt
+             FROM tweets WHERE ai_cluster IS NOT NULL
+             GROUP BY ai_cluster ORDER BY cnt DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ClusterStat {
+                cluster: row.get(0)?,
+                category: row.get(1)?,
+                count: row.get(2)?,
+            })
+        })?;
+        let mut stats = Vec::new();
+        for row in rows { stats.push(row?); }
+        Ok(stats)
+    }
+
     /// List tweets filtered by ai_category
     pub fn list_tweets_by_category(&self, category: &str, limit: u32) -> Result<Vec<TweetRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, author_handle, author_name, content, created_at,
-                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_summary, ai_type, ai_topics,
+            "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
+                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
                     (media_json IS NOT NULL AND media_json != '[]') as has_media
              FROM tweets WHERE ai_category = ?1 ORDER BY created_at DESC LIMIT ?2"
         )?;
@@ -915,10 +1046,10 @@ impl Database {
                 content: row.get(3)?, created_at: row.get(4)?, tweet_url: row.get(5)?,
                 likes: row.get(6)?, retweets: row.get(7)?, replies_count: row.get(8)?,
                 views: row.get(9)?, source: row.get(10)?, ai_category: row.get(11)?,
-                ai_summary: row.get(12)?,
-                ai_type: row.get(13)?,
-                ai_topics: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
-                has_media: row.get::<_, i32>(15).unwrap_or(0) != 0,
+                ai_cluster: row.get(12)?,
+                ai_summary: row.get(13)?, ai_type: row.get(14)?,
+                ai_topics: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                has_media: row.get::<_, i32>(16).unwrap_or(0) != 0,
             })
         })?;
         let mut tweets = Vec::new();
@@ -1049,21 +1180,21 @@ impl Database {
     ) -> Result<Vec<GraphNode>> {
         let conn = self.conn.lock().unwrap();
         let sql = if source_filter.is_some() {
-            "SELECT id, author_handle, author_name, substr(content, 1, 200), ai_category, ai_summary, embedding, ai_topics
+            "SELECT id, author_handle, author_name, substr(COALESCE(resolved_content, content), 1, 200), ai_category, ai_cluster, ai_summary, embedding, ai_topics, created_at
              FROM tweets WHERE embedding IS NOT NULL AND source = ?2 LIMIT ?1"
         } else {
-            "SELECT id, author_handle, author_name, substr(content, 1, 200), ai_category, ai_summary, embedding, ai_topics
+            "SELECT id, author_handle, author_name, substr(COALESCE(resolved_content, content), 1, 200), ai_category, ai_cluster, ai_summary, embedding, ai_topics, created_at
              FROM tweets WHERE embedding IS NOT NULL LIMIT ?1"
         };
         let mut stmt = conn.prepare(sql)?;
 
         let map_row = |row: &rusqlite::Row| -> rusqlite::Result<GraphNode> {
-            let embedding_blob: Vec<u8> = row.get(6)?;
+            let embedding_blob: Vec<u8> = row.get(7)?;
             let embedding: Vec<f32> = embedding_blob
                 .chunks_exact(4)
                 .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 .collect();
-            let topics_raw: Option<String> = row.get(7)?;
+            let topics_raw: Option<String> = row.get(8)?;
             let topics: Vec<String> = topics_raw
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default();
@@ -1073,8 +1204,10 @@ impl Database {
                 author_name: row.get(2)?,
                 content_preview: row.get(3)?,
                 category: row.get(4)?,
-                summary: row.get(5)?,
+                cluster: row.get(5)?,
+                summary: row.get(6)?,
                 topics,
+                created_at: row.get(9)?,
                 embedding,
             })
         };
@@ -1108,14 +1241,23 @@ fn f32_slice_to_bytes(floats: &[f32]) -> &[u8] {
 }
 
 #[derive(Debug, serde::Serialize, Clone)]
+pub struct ClusterStat {
+    pub cluster: String,
+    pub category: Option<String>,
+    pub count: u32,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct GraphNode {
     pub id: String,
     pub author_handle: String,
     pub author_name: Option<String>,
     pub content_preview: String,
     pub category: Option<String>,
+    pub cluster: Option<String>,
     pub summary: Option<String>,
     pub topics: Vec<String>,
+    pub created_at: Option<String>,
     #[serde(skip)]
     pub embedding: Vec<f32>,
 }
@@ -1195,10 +1337,14 @@ pub struct TweetFull {
     pub views: i64,
     pub source: String,
     pub ai_category: Option<String>,
+    pub ai_cluster: Option<String>,
     pub ai_summary: Option<String>,
     pub ai_topics: Vec<String>,
     pub ai_type: Option<String>,
     pub has_embedding: bool,
+    pub resolved_content: Option<String>,
+    pub resolved_author: Option<String>,
+    pub resolved_url: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, Clone)]
@@ -1215,6 +1361,7 @@ pub struct TweetRow {
     pub views: i64,
     pub source: String,
     pub ai_category: Option<String>,
+    pub ai_cluster: Option<String>,
     pub ai_summary: Option<String>,
     pub ai_type: Option<String>,
     pub ai_topics: Vec<String>,

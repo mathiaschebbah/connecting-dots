@@ -30,10 +30,15 @@ CREATE TABLE IF NOT EXISTS tweets (
     embedding BLOB,
     -- AI metadata (phase 2: Claude API, async)
     ai_category TEXT,
+    ai_cluster TEXT,
     ai_summary TEXT,
     ai_topics TEXT,
     ai_type TEXT,
-    ai_enriched_at TEXT
+    ai_enriched_at TEXT,
+    -- Resolved link content (for tweets that are just a link to another tweet/article)
+    resolved_content TEXT,
+    resolved_author TEXT,
+    resolved_url TEXT
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS tweets_fts USING fts5(
@@ -42,22 +47,22 @@ CREATE VIRTUAL TABLE IF NOT EXISTS tweets_fts USING fts5(
     content_rowid='rowid'
 );
 
--- Triggers to keep FTS in sync
+-- Triggers to keep FTS in sync (uses COALESCE to index resolved_content when available)
 CREATE TRIGGER IF NOT EXISTS tweets_ai AFTER INSERT ON tweets BEGIN
     INSERT INTO tweets_fts(rowid, content, author_handle, author_name)
-    VALUES (new.rowid, new.content, new.author_handle, new.author_name);
+    VALUES (new.rowid, COALESCE(new.resolved_content, new.content), new.author_handle, new.author_name);
 END;
 
 CREATE TRIGGER IF NOT EXISTS tweets_ad AFTER DELETE ON tweets BEGIN
     INSERT INTO tweets_fts(tweets_fts, rowid, content, author_handle, author_name)
-    VALUES ('delete', old.rowid, old.content, old.author_handle, old.author_name);
+    VALUES ('delete', old.rowid, COALESCE(old.resolved_content, old.content), old.author_handle, old.author_name);
 END;
 
 CREATE TRIGGER IF NOT EXISTS tweets_au AFTER UPDATE ON tweets BEGIN
     INSERT INTO tweets_fts(tweets_fts, rowid, content, author_handle, author_name)
-    VALUES ('delete', old.rowid, old.content, old.author_handle, old.author_name);
+    VALUES ('delete', old.rowid, COALESCE(old.resolved_content, old.content), old.author_handle, old.author_name);
     INSERT INTO tweets_fts(rowid, content, author_handle, author_name)
-    VALUES (new.rowid, new.content, new.author_handle, new.author_name);
+    VALUES (new.rowid, COALESCE(new.resolved_content, new.content), new.author_handle, new.author_name);
 END;
 
 -- Tweet interactions

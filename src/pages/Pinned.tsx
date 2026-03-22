@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Plus, X } from "lucide-react";
 import { TweetCard, type Tweet } from "../components/TweetCard";
-import { TweetDetail } from "../components/TweetDetail";
+import { useAppStore } from "../stores/appStore";
 
 interface PinnedAccount {
   handle: string;
@@ -27,9 +27,9 @@ export function Pinned() {
   const [accounts, setAccounts] = useState<PinnedAccount[]>([]);
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const [tweets, setTweets] = useState<Tweet[]>([]);
-  const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [newHandle, setNewHandle] = useState("");
+  const pushFocus = useAppStore((s) => s.pushFocus);
 
   const loadAccounts = async () => {
     try {
@@ -74,13 +74,13 @@ export function Pinned() {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="max-w-xs text-left">
-          <p className="text-[13px] text-zinc-700 mb-1">Track specific accounts</p>
-          <p className="text-[12px] text-zinc-400 mb-4">Pin accounts to watch their tweets across your timeline. Their content is indexed and searchable automatically.</p>
+          <p className="text-[13px] text-zinc-700 mb-1">Suivre des comptes</p>
+          <p className="text-[12px] text-zinc-400 mb-4">Epinglez des comptes pour surveiller leurs tweets. Leur contenu est indexé et cherchable automatiquement.</p>
           <button
             onClick={() => setShowAdd(true)}
             className="px-3 py-1.5 bg-zinc-900 text-white rounded-md text-[12px] font-medium hover:bg-zinc-800 transition-colors"
           >
-            Pin an account
+            Epingler un compte
           </button>
         </div>
       </div>
@@ -91,7 +91,7 @@ export function Pinned() {
     <div className="h-full flex">
       <div className="w-[260px] border-r border-zinc-200 bg-white flex flex-col shrink-0">
         <div className="px-4 py-3 border-b border-zinc-200 flex items-center justify-between">
-          <h2 className="text-[13px] font-semibold text-zinc-900">Pinned Accounts</h2>
+          <h2 className="text-[13px] font-semibold text-zinc-900">Comptes suivis</h2>
           <button onClick={() => setShowAdd(!showAdd)} className="text-zinc-400 hover:text-zinc-700 p-1 rounded-md hover:bg-zinc-100">
             <Plus size={16} />
           </button>
@@ -158,29 +158,21 @@ export function Pinned() {
             </div>
             <div className="space-y-2">
               {tweets.map((t) => (
-                <div key={t.id} onClick={() => setSelectedTweetId(t.id)}>
+                <div key={t.id} onClick={() => pushFocus({ type: "tweet", id: t.id })}>
                   <TweetCard tweet={t} compact />
                 </div>
               ))}
               {tweets.length === 0 && (
-                <p className="text-[13px] text-zinc-400 py-8">No tweets from this account in your database yet. They'll appear as the sync picks them up.</p>
+                <p className="text-[13px] text-zinc-400 py-8">Aucun tweet de ce compte dans la base. Ils apparaitront au fur et a mesure de la synchronisation.</p>
               )}
             </div>
           </div>
         ) : (
           <div className="h-full flex items-center justify-center">
-            <p className="text-[13px] text-zinc-400">Select an account to see their tweets</p>
+            <p className="text-[13px] text-zinc-400">Selectionnez un compte pour voir ses tweets</p>
           </div>
         )}
       </div>
-
-      {selectedTweetId && (
-        <TweetDetail
-          tweetId={selectedTweetId}
-          onClose={() => setSelectedTweetId(null)}
-          onNavigate={(id) => setSelectedTweetId(id)}
-        />
-      )}
     </div>
   );
 }

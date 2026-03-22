@@ -123,10 +123,10 @@ export function Boards() {
   const createFromCategory = async (catName: string) => {
     const p = await createProject(catName);
     if (!p) return;
-    // Auto-create columns: "To Read", "Reading", "Done"
-    await invoke("create_kanban_column", { projectId: p.id, name: "To Read" });
-    await invoke("create_kanban_column", { projectId: p.id, name: "Reading" });
-    await invoke("create_kanban_column", { projectId: p.id, name: "Done" });
+    // Auto-create columns
+    await invoke("create_kanban_column", { projectId: p.id, name: "À lire" });
+    await invoke("create_kanban_column", { projectId: p.id, name: "En cours" });
+    await invoke("create_kanban_column", { projectId: p.id, name: "Fait" });
 
     // Auto-add top tweets from that category to "To Read"
     const tweets = await invoke<Tweet[]>("list_tweets_by_category", { category: catName, limit: 10 });
@@ -208,19 +208,19 @@ export function Boards() {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="max-w-md text-left">
-          <p className="text-[13px] text-zinc-700 mb-1">Organize your research</p>
+          <p className="text-[13px] text-zinc-700 mb-1">Organise ta recherche</p>
           <p className="text-[12px] text-zinc-400 mb-4">
-            Create a board from scratch, or auto-generate one from a topic category.
-            The AI will pre-populate it with relevant tweets.
+            Crée un tableau vierge, ou génère-en un automatiquement à partir d'un sujet.
+            L'IA le pré-remplira avec les posts pertinents.
           </p>
           <div className="flex gap-2 mb-4">
             <button onClick={() => setShowNewProject(true)}
               className="px-3 py-1.5 bg-zinc-900 text-white rounded-md text-[12px] font-medium hover:bg-zinc-800">
-              Blank board
+              Tableau vierge
             </button>
             <button onClick={() => setShowCreateFromCategory(true)}
               className="px-3 py-1.5 border border-violet-200 text-violet-700 bg-violet-50 rounded-md text-[12px] font-medium hover:bg-violet-100 flex items-center gap-1.5">
-              <Sparkles size={12} /> From a topic
+              <Sparkles size={12} /> Depuis un sujet
             </button>
           </div>
 
@@ -243,8 +243,8 @@ export function Boards() {
           {showNewProject && (
             <form onSubmit={(e) => { e.preventDefault(); createProject(); }} className="flex items-center gap-1 mt-2">
               <input type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="Board name" className="px-2 py-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-[12px] w-40 focus:outline-none focus:border-violet-600" autoFocus />
-              <button type="submit" className="px-3 py-1.5 bg-zinc-900 text-white rounded-md text-[11px] font-medium">Create</button>
+                placeholder="Nom du tableau" className="px-2 py-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-[12px] w-40 focus:outline-none focus:border-violet-600" autoFocus />
+              <button type="submit" className="px-3 py-1.5 bg-zinc-900 text-white rounded-md text-[11px] font-medium">Créer</button>
               <button type="button" onClick={() => setShowNewProject(false)} className="text-zinc-400"><X size={14} /></button>
             </form>
           )}
@@ -284,7 +284,7 @@ export function Boards() {
         )}
         {showCreateFromCategory && (
           <div className="flex items-center gap-1 ml-2">
-            {categories.slice(0, 6).map((cat) => {
+            {categories.slice(0, 8).map((cat) => {
               const color = CAT_COLORS[cat.name] || "#71717A";
               return (
                 <button key={cat.name} onClick={() => createFromCategory(cat.name)}
@@ -356,7 +356,7 @@ export function Boards() {
                       <div className="relative">
                         <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400" />
                         <input type="text" value={cardSearchQuery} onChange={(e) => searchTweets(e.target.value)}
-                          placeholder="Search tweets..." className="w-full pl-6 pr-2 py-1.5 bg-white border border-zinc-200 rounded-md text-[11px] focus:outline-none focus:border-violet-600" autoFocus />
+                          placeholder="Chercher des posts..." className="w-full pl-6 pr-2 py-1.5 bg-white border border-zinc-200 rounded-md text-[11px] focus:outline-none focus:border-violet-600" autoFocus />
                       </div>
                       {cardSearchResults.map((t) => (
                         <button key={t.id} onClick={() => addCard(col.id, t.id)}
@@ -366,12 +366,12 @@ export function Boards() {
                         </button>
                       ))}
                       <button onClick={() => { setAddCardCol(null); setCardSearchResults([]); setCardSearchQuery(""); }}
-                        className="text-[10px] text-zinc-400">Cancel</button>
+                        className="text-[10px] text-zinc-400">Annuler</button>
                     </div>
                   ) : suggesting === col.id ? (
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5 text-[10px] text-violet-600 font-medium px-1 mb-1">
-                        <Sparkles size={10} /> AI suggestions
+                        <Sparkles size={10} /> Suggestions IA
                       </div>
                       {suggestions.length === 0 && (
                         <div className="flex items-center justify-center py-3">
@@ -386,17 +386,17 @@ export function Boards() {
                         </button>
                       ))}
                       <button onClick={() => { setSuggesting(null); setSuggestions([]); }}
-                        className="text-[10px] text-zinc-400">Cancel</button>
+                        className="text-[10px] text-zinc-400">Annuler</button>
                     </div>
                   ) : (
                     <div className="flex gap-1">
                       <button onClick={() => setAddCardCol(col.id)}
                         className="flex-1 py-1.5 text-[11px] text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-md transition-colors flex items-center justify-center gap-1">
-                        <Search size={10} /> Search
+                        <Search size={10} /> Chercher
                       </button>
                       <button onClick={() => suggestTweets(col.id)}
                         className="flex-1 py-1.5 text-[11px] text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-md transition-colors flex items-center justify-center gap-1">
-                        <Sparkles size={10} /> Suggest
+                        <Sparkles size={10} /> Suggérer
                       </button>
                     </div>
                   )}
@@ -407,17 +407,17 @@ export function Boards() {
             <div className="w-[260px] shrink-0">
               {showNewColumn ? (
                 <form onSubmit={(e) => { e.preventDefault(); createColumn(); }} className="bg-zinc-50 border border-zinc-200 rounded-lg p-3 space-y-2">
-                  <input type="text" value={newColumnName} onChange={(e) => setNewColumnName(e.target.value)} placeholder="Column name"
+                  <input type="text" value={newColumnName} onChange={(e) => setNewColumnName(e.target.value)} placeholder="Nom de la colonne"
                     className="w-full px-2 py-1.5 bg-white border border-zinc-200 rounded-md text-[11px] focus:outline-none focus:border-violet-600" autoFocus />
                   <div className="flex gap-1">
-                    <button type="submit" className="px-3 py-1 bg-zinc-900 text-white rounded-md text-[10px] font-medium">Add</button>
-                    <button type="button" onClick={() => setShowNewColumn(false)} className="px-3 py-1 text-zinc-400 text-[10px]">Cancel</button>
+                    <button type="submit" className="px-3 py-1 bg-zinc-900 text-white rounded-md text-[10px] font-medium">Ajouter</button>
+                    <button type="button" onClick={() => setShowNewColumn(false)} className="px-3 py-1 text-zinc-400 text-[10px]">Annuler</button>
                   </div>
                 </form>
               ) : (
                 <button onClick={() => setShowNewColumn(true)}
                   className="w-full py-3 border border-dashed border-zinc-300 rounded-lg text-[11px] text-zinc-400 hover:text-zinc-700 hover:border-zinc-400 transition-colors flex items-center justify-center gap-1">
-                  <Plus size={12} /> Add column
+                  <Plus size={12} /> Ajouter une colonne
                 </button>
               )}
             </div>
@@ -427,11 +427,11 @@ export function Boards() {
           <div className="px-4 pb-4 border-t border-zinc-100 pt-3">
             <div className="flex items-center gap-2 mb-2">
               <FolderOpen size={12} className="text-zinc-400" />
-              <span className="text-[12px] font-medium text-zinc-500">Groups</span>
+              <span className="text-[12px] font-medium text-zinc-500">Groupes</span>
               {showNewGroup ? (
                 <form onSubmit={(e) => { e.preventDefault(); createGroup(); }} className="flex items-center gap-1 ml-2">
                   <input type="text" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)}
-                    placeholder="Group name" className="px-2 py-1 bg-zinc-50 border border-zinc-200 rounded-md text-[11px] w-28 focus:outline-none focus:border-violet-600" autoFocus />
+                    placeholder="Nom du groupe" className="px-2 py-1 bg-zinc-50 border border-zinc-200 rounded-md text-[11px] w-28 focus:outline-none focus:border-violet-600" autoFocus />
                   <button type="button" onClick={() => setShowNewGroup(false)} className="text-zinc-400"><X size={12} /></button>
                 </form>
               ) : (
@@ -449,7 +449,7 @@ export function Boards() {
                 </div>
               ))}
               {groups.length === 0 && !showNewGroup && (
-                <span className="text-[11px] text-zinc-300">No groups yet</span>
+                <span className="text-[11px] text-zinc-300">Aucun groupe</span>
               )}
             </div>
           </div>

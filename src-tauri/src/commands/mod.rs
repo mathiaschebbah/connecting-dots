@@ -1,5 +1,5 @@
 use crate::agent::{self, AgentEvent, ChatMessage};
-use crate::db::{cosine_similarity, DashboardStats, Group, KanbanCard, KanbanColumn, MonitoredTopic, PinnedAccount, Project, Tag, TweetFull, TweetNote, TweetRow};
+use crate::db::{cosine_similarity, ClusterStat, DashboardStats, Group, KanbanCard, KanbanColumn, MonitoredTopic, PinnedAccount, Project, Tag, TweetFull, TweetNote, TweetRow};
 use crate::twitter::clix::Clix;
 use crate::workers;
 use crate::AppState;
@@ -141,6 +141,11 @@ pub async fn embed_pending(state: State<'_, AppState>) -> Result<EmbedResult, St
         embedded_count: count,
         remaining,
     })
+}
+
+#[tauri::command]
+pub async fn reset_enrichments(state: State<'_, AppState>) -> Result<u32, String> {
+    state.db.reset_all_enrichments().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -295,6 +300,67 @@ pub async fn list_tweets_by_category(
     limit: Option<u32>,
 ) -> Result<Vec<TweetRow>, String> {
     state.db.list_tweets_by_category(&category, limit.unwrap_or(50)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_tweets_by_cluster(
+    state: State<'_, AppState>,
+    cluster: String,
+    limit: Option<u32>,
+) -> Result<Vec<TweetRow>, String> {
+    state.db.list_tweets_by_cluster(&cluster, limit.unwrap_or(50)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_cluster_stats(state: State<'_, AppState>) -> Result<Vec<ClusterStat>, String> {
+    state.db.get_cluster_stats().map_err(|e| e.to_string())
+}
+
+// ── Thread ──
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ThreadData {
+    pub tweets: Vec<ThreadTweet>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ThreadTweet {
+    pub id: String,
+    pub author_handle: String,
+    pub author_name: Option<String>,
+    pub content: String,
+    pub created_at: Option<String>,
+    pub tweet_url: Option<String>,
+    pub likes: i64,
+    pub retweets: i64,
+    pub replies_count: i64,
+    pub views: i64,
+}
+
+#[tauri::command]
+pub async fn get_thread(tweet_id: String) -> Result<ThreadData, String> {
+    let clix = Clix::new();
+    match clix.tweet_thread(&tweet_id) {
+        Ok(tweets) => {
+            let thread_tweets: Vec<ThreadTweet> = tweets.into_iter().map(|t| {
+                let eng = t.engagement.as_ref();
+                ThreadTweet {
+                    id: t.id,
+                    author_handle: t.author_handle,
+                    author_name: t.author_name,
+                    content: t.text,
+                    created_at: t.created_at,
+                    tweet_url: t.tweet_url,
+                    likes: eng.and_then(|e| e.likes).unwrap_or(0),
+                    retweets: eng.and_then(|e| e.retweets).unwrap_or(0),
+                    replies_count: eng.and_then(|e| e.replies).unwrap_or(0),
+                    views: eng.and_then(|e| e.views).unwrap_or(0),
+                }
+            }).collect();
+            Ok(ThreadData { tweets: thread_tweets })
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 // ── Dashboard ──
@@ -500,8 +566,10 @@ pub struct GraphNodeOut {
     pub author_name: Option<String>,
     pub content_preview: String,
     pub category: Option<String>,
+    pub cluster: Option<String>,
     pub summary: Option<String>,
     pub topics: Vec<String>,
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -547,8 +615,10 @@ pub async fn get_network_graph(
             author_name: n.author_name,
             content_preview: n.content_preview,
             category: n.category,
+            cluster: n.cluster,
             summary: n.summary,
             topics: n.topics,
+            created_at: n.created_at,
         })
         .collect();
 

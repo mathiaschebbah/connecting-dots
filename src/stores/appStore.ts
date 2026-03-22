@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type Lens = "river" | "clusters" | "graph" | "boards";
+export type Lens = "river" | "clusters" | "graph" | "boards" | "agent" | "pinned";
 
 export interface FocusItem {
   type: "tweet" | "author" | "topic";
@@ -13,6 +13,10 @@ interface AppState {
 
   activeCategory: string | null;
   setActiveCategory: (cat: string | null) => void;
+
+  activeCluster: string | null;
+  setActiveCluster: (cluster: string | null) => void;
+  navigateToCluster: (cluster: string) => void;
 
   focusStack: FocusItem[];
   pushFocus: (item: FocusItem) => void;
@@ -29,6 +33,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   activeCategory: null,
   setActiveCategory: (activeCategory) => set({ activeCategory }),
+
+  activeCluster: null,
+  setActiveCluster: (activeCluster) => set({ activeCluster }),
+  navigateToCluster: (cluster) => set({ lens: "graph", activeCluster: cluster }),
 
   focusStack: [],
   pushFocus: (item) =>

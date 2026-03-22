@@ -35,14 +35,14 @@ export function ApiKeyGate({ onAuthenticated }: ApiKeyGateProps) {
             Connecting Dots
           </h1>
           <p className="text-[13px] text-zinc-500">
-            Your second brain, plugged into X
+            Ton deuxième cerveau, branché sur X
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="api-key" className="block text-[12px] text-zinc-500 mb-1.5 font-medium">
-              Anthropic API Key
+              Clé API Anthropic
             </label>
             <input
               id="api-key"
@@ -62,11 +62,11 @@ export function ApiKeyGate({ onAuthenticated }: ApiKeyGateProps) {
             disabled={loading || !apiKey.trim()}
             className="w-full py-2 bg-zinc-900 text-white rounded-md font-medium text-[13px] hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? "Connecting..." : "Start"}
+            {loading ? "Connexion..." : "Démarrer"}
           </button>
 
           <p className="text-zinc-400 text-[11px] text-center pt-1">
-            Your key stays local. Never leaves your machine.
+            Ta clé reste locale. Elle ne quitte jamais ta machine.
           </p>
         </form>
       </div>

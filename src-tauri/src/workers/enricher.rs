@@ -64,14 +64,15 @@ async fn enrich_batch(
         tweets_text.push_str(&format!("[Tweet {}] (id: {})\n{}\n\n", i + 1, id, content));
     }
 
-    let system_prompt = r#"You analyze tweets and extract metadata. For each tweet, respond with a JSON array where each element has:
-- "id": the tweet id
-- "category": one of: "AI", "Dev Tools", "Web Dev", "Crypto/Finance", "Design", "Science", "Business", "Politics", "Humor", "Personal", "Other"
-- "summary": a one-line summary (max 100 chars)
-- "topics": array of 1-5 topic tags (lowercase, no #)
-- "type": one of: "tutorial", "opinion", "announcement", "thread", "question", "news", "meme", "showcase", "discussion"
+    let system_prompt = r#"Tu analyses des tweets et extrais des métadonnées structurées pour une plateforme de veille technologique destinée à des centres de R&D. Pour chaque tweet, réponds avec un tableau JSON où chaque élément contient :
+- "id": l'id du tweet
+- "category": un domaine large pour le code couleur. Un parmi : "ai/ml", "dev-tools", "web", "crypto", "design", "science", "business", "politics", "culture", "other"
+- "cluster": un label PRÉCIS et SPÉCIFIQUE du sujet réel du tweet. C'est le champ le plus important. PAS une catégorie large — un concept, outil, technique ou sujet spécifique. Exemples : "rlhf", "claude-code", "prompt-engineering", "react-server-components", "rust-async", "cursor-ide", "attention-mechanism", "rag-pipelines", "vector-databases", "llm-inference", "stable-diffusion", "gpu-programming". Utilise des minuscules avec tirets. Sois aussi spécifique que le contenu le permet. Si c'est un outil/produit spécifique, utilise son nom. Si c'est une technique, nomme la technique.
+- "summary": un résumé en une ligne EN FRANÇAIS (max 100 caractères). Capture l'essence du tweet pour un chercheur en veille techno.
+- "topics": tableau de 1-5 tags de sujets (minuscules, sans #). Complètent le cluster avec des concepts liés.
+- "type": un parmi : "tutorial", "opinion", "announcement", "thread", "question", "news", "meme", "showcase", "discussion", "resource", "alpha". Utilise "alpha" pour les informations exclusives ou signaux faibles. Utilise "meme" ou "opinion" pour le contenu sans substance technique.
 
-Respond ONLY with the JSON array, no markdown fences, no explanation."#;
+Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown, sans explication."#;
 
     let body = serde_json::json!({
         "model": "claude-haiku-4-5-20251001",
@@ -128,6 +129,7 @@ Respond ONLY with the JSON array, no markdown fences, no explanation."#;
         db.update_ai_metadata(
             &enrichment.id,
             &enrichment.category,
+            &enrichment.cluster,
             &enrichment.summary,
             &topics_json,
             &enrichment.r#type,
@@ -142,6 +144,7 @@ Respond ONLY with the JSON array, no markdown fences, no explanation."#;
 struct TweetEnrichment {
     id: String,
     category: String,
+    cluster: String,
     summary: String,
     topics: Vec<String>,
     r#type: String,

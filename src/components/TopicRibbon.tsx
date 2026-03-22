@@ -30,21 +30,24 @@ export function TopicRibbon() {
     return () => clearInterval(i);
   }, []);
 
-  // Don't show for Graph/Boards lenses
-  if (lens === "graph" || lens === "boards") return null;
+  // Only show for River/Clusters lenses
+  if (lens !== "river" && lens !== "clusters") return null;
   if (!stats || stats.categories.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-zinc-100 bg-white overflow-x-auto shrink-0">
+    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-100 bg-white/80 backdrop-blur-sm shadow-sm overflow-x-auto shrink-0">
       <button
         onClick={() => setActiveCategory(null)}
-        className={`text-[11px] font-medium px-2 py-1 rounded-md border transition-colors shrink-0 ${
+        className={`text-[11px] font-medium px-2.5 py-1 rounded-full transition-all duration-200 ease-out shrink-0 flex items-center gap-1.5 ${
           !activeCategory
-            ? "bg-violet-100 text-violet-700 border-violet-200"
-            : "border-zinc-200 text-zinc-500 bg-white hover:border-zinc-300"
+            ? "bg-violet-100 text-violet-700"
+            : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
         }`}
       >
-        All {stats.total_tweets}
+        Tout
+        <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${!activeCategory ? "bg-violet-700/10" : "bg-zinc-200 text-zinc-500"}`}>
+          {stats.total_tweets}
+        </span>
       </button>
       {stats.categories.map((cat) => {
         const color = CAT_COLORS[cat.name] || "#71717A";
@@ -53,14 +56,20 @@ export function TopicRibbon() {
           <button
             key={cat.name}
             onClick={() => setActiveCategory(active ? null : cat.name)}
-            className={`text-[11px] font-medium px-2 py-1 rounded-md border transition-colors shrink-0 inline-flex items-center gap-1 ${
-              active ? "border-current" : "border-zinc-200 bg-white hover:border-zinc-300"
+            className={`text-[11px] font-medium px-2.5 py-1 rounded-full transition-all duration-200 ease-out shrink-0 inline-flex items-center gap-2 ${
+              active ? "" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
             }`}
-            style={active ? { backgroundColor: color + "15", color, borderColor: color + "40" } : {}}
+            style={active ? { backgroundColor: `${color}15`, color: color } : {}}
           >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
-            {cat.name}
-            <span className={active ? "opacity-60" : "text-zinc-300"}>{cat.count}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+              {cat.name}
+            </div>
+            <span
+              className={`text-[10px] px-1 rounded-full ${active ? "bg-current/10" : "text-zinc-400"}`}
+            >
+              {cat.count}
+            </span>
           </button>
         );
       })}
