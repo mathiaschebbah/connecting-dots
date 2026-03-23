@@ -1,10 +1,6 @@
 # Connecting Dots
 
-Tu bookmarkes des dizaines de tweets par jour. Le problème, c'est que tu ne les retrouves jamais.
-
-Connecting Dots prend tes signets X et les range automatiquement par sujet. Claude Code dans un dossier, RAG dans un autre, Cursor dans un troisième. Clique sur un sujet, retrouve tes signets. Clique sur un signet, lis-le directement dans X sans quitter l'app.
-
-C'est une poupée russe : tes signets, organisés en sujets, navigables, cherchables.
+connecting-dots est un projet visant à tirer profit du réseau social X afin d'en faire un moteur de pensée à ciel ouvert, où chaque post créé par un utilisateur s'inscrit dans un nuage de pensée conceptuel, permettant à chacun de naviguer utilement et efficacement dans les flots et marées de la recherche, pensée et créativité communautaire.
 
 ## Installation
 
@@ -16,7 +12,7 @@ npm install
 npm run tauri dev
 ```
 
-Au premier lancement, l'app te demande ta clé API Anthropic. Tes signets sont ensuite synchronisés et classés automatiquement.
+Lors du premier lancement, une clé API Anthropic est requise. Les signets sont ensuite synchronisés et classés automatiquement.
 
 ## Licence
 
