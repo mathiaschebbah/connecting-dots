@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Heart, Repeat2, MessageCircle, BarChart2 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -20,6 +19,7 @@ interface Tweet {
   ai_type?: string | null;
   ai_topics?: string[];
   has_media?: boolean;
+  author_avatar?: string | null;
 }
 
 function fmt(n: number): string {
@@ -60,30 +60,28 @@ function isLinkOnly(content: string): boolean {
   return content.replace(/https?:\/\/\S+/g, "").trim().length < 20;
 }
 
-function Avatar({ handle }: { handle: string }) {
+function Avatar({ handle, avatarUrl }: { handle: string; avatarUrl?: string | null }) {
   const color = getInitialColor(handle);
-  const [failed, setFailed] = useState(false);
-  const src = `https://unavatar.io/x/${handle}`;
 
-  if (failed) {
+  if (avatarUrl) {
     return (
-      <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold shrink-0"
-        style={{ backgroundColor: color + "25", color }}
-      >
-        {handle[0]?.toUpperCase()}
-      </div>
+      <img
+        src={avatarUrl}
+        alt={handle}
+        className="w-10 h-10 rounded-full shrink-0 bg-secondary object-cover"
+        loading="lazy"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden"); }}
+      />
     );
   }
 
   return (
-    <img
-      src={src}
-      alt={handle}
-      className="w-10 h-10 rounded-full shrink-0 bg-secondary object-cover"
-      onError={() => setFailed(true)}
-      loading="lazy"
-    />
+    <div
+      className="w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold shrink-0"
+      style={{ backgroundColor: color + "25", color }}
+    >
+      {handle[0]?.toUpperCase()}
+    </div>
   );
 }
 
@@ -99,7 +97,7 @@ export function TweetCard({ tweet, compact, hideTags }: { tweet: Tweet; compact?
       )}
     >
       {/* Avatar */}
-      <Avatar handle={tweet.author_handle} />
+      <Avatar handle={tweet.author_handle} avatarUrl={tweet.author_avatar} />
 
       {/* Content column */}
       <div className="flex-1 min-w-0">
@@ -148,20 +146,20 @@ export function TweetCard({ tweet, compact, hideTags }: { tweet: Tweet; compact?
 
         {/* Metrics — spread across full width like X */}
         <div className="flex items-center mt-2 -ml-2">
-          <div className="flex-1 flex items-center gap-1 text-muted-foreground hover:text-[#1d9bf0] transition-colors cursor-pointer p-2 rounded-full">
-            <MessageCircle size={16} />
+          <div className="flex-1 group/reply flex items-center gap-1 text-muted-foreground hover:text-[#1d9bf0] transition-colors duration-150 cursor-pointer p-2 rounded-full">
+            <MessageCircle size={16} className="transition-transform duration-150 group-hover/reply:scale-110" />
             {tweet.replies_count > 0 && <span className="text-[13px] leading-4">{fmt(tweet.replies_count)}</span>}
           </div>
-          <div className="flex-1 flex items-center gap-1 text-muted-foreground hover:text-[#00ba7c] transition-colors cursor-pointer p-2 rounded-full">
-            <Repeat2 size={16} />
+          <div className="flex-1 group/rt flex items-center gap-1 text-muted-foreground hover:text-[#00ba7c] transition-colors duration-150 cursor-pointer p-2 rounded-full">
+            <Repeat2 size={16} className="transition-transform duration-150 group-hover/rt:scale-110" />
             {tweet.retweets > 0 && <span className="text-[13px] leading-4">{fmt(tweet.retweets)}</span>}
           </div>
-          <div className="flex-1 flex items-center gap-1 text-muted-foreground hover:text-[#f91880] transition-colors cursor-pointer p-2 rounded-full">
-            <Heart size={16} />
+          <div className="flex-1 group/like flex items-center gap-1 text-muted-foreground hover:text-[#f91880] transition-colors duration-150 cursor-pointer p-2 rounded-full">
+            <Heart size={16} className="transition-transform duration-150 group-hover/like:scale-110" />
             {tweet.likes > 0 && <span className="text-[13px] leading-4">{fmt(tweet.likes)}</span>}
           </div>
           {tweet.views > 0 && (
-            <div className="flex-1 flex items-center gap-1 text-muted-foreground hover:text-[#1d9bf0] transition-colors cursor-pointer p-2 rounded-full">
+            <div className="flex-1 flex items-center gap-1 text-muted-foreground hover:text-[#1d9bf0] transition-colors duration-150 cursor-pointer p-2 rounded-full">
               <BarChart2 size={16} />
               <span className="text-[13px] leading-4">{fmt(tweet.views)}</span>
             </div>

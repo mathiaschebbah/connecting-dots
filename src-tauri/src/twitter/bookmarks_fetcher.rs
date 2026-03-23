@@ -9,7 +9,6 @@ const GRAPHQL_URL: &str = "https://x.com/i/api/graphql";
 
 /// Fetches ALL bookmarks with cursor-based pagination, bypassing clix's single-page limit.
 pub struct BookmarksFetcher {
-    auth_token: String,
     ct0: String,
     cookies_str: String,
 }
@@ -31,11 +30,6 @@ impl BookmarksFetcher {
             .as_object()
             .context("No default account in clix auth")?;
 
-        let auth_token = default_account["auth_token"]
-            .as_str()
-            .context("Missing auth_token")?
-            .to_string();
-
         let ct0 = default_account["ct0"]
             .as_str()
             .context("Missing ct0")?
@@ -53,7 +47,6 @@ impl BookmarksFetcher {
             .join("; ");
 
         Ok(Self {
-            auth_token,
             ct0,
             cookies_str,
         })
@@ -66,16 +59,16 @@ impl BookmarksFetcher {
         let mut all_tweets = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
         let mut cursor: Option<String> = None;
+        let mut consecutive_empty = 0u32;
 
         for page in 0..max_pages {
             let (tweets, next_cursor) = self.fetch_page(&client, cursor.as_deref())?;
 
             if tweets.is_empty() {
-                log::info!("Bookmarks fetch complete: {} pages, {} unique tweets", page, all_tweets.len());
+                log::info!("Bookmarks fetch complete (empty page): {} pages, {} unique tweets", page, all_tweets.len());
                 break;
             }
 
-            // Deduplicate: only keep tweets we haven't seen yet
             let mut new_count = 0;
             for tweet in tweets {
                 if seen_ids.insert(tweet.id.clone()) {
@@ -84,10 +77,17 @@ impl BookmarksFetcher {
                 }
             }
 
-            // If no new tweets on this page, we've looped — stop
+            log::info!("Bookmarks page {}: {} new, {} total", page + 1, new_count, all_tweets.len());
+
+            // Only stop if we get multiple consecutive pages with no new tweets
             if new_count == 0 {
-                log::info!("Bookmarks fetch complete (no new tweets): {} pages, {} unique tweets", page + 1, all_tweets.len());
-                break;
+                consecutive_empty += 1;
+                if consecutive_empty >= 2 {
+                    log::info!("Bookmarks fetch complete (no new tweets): {} pages, {} unique tweets", page + 1, all_tweets.len());
+                    break;
+                }
+            } else {
+                consecutive_empty = 0;
             }
 
             match next_cursor {
@@ -108,7 +108,7 @@ impl BookmarksFetcher {
         cursor: Option<&str>,
     ) -> Result<(Vec<ClixTweet>, Option<String>)> {
         let mut variables = json!({
-            "count": 100,
+            "count": 20,
             "includePromotedContent": false
         });
 
@@ -176,14 +176,18 @@ impl BookmarksFetcher {
 }
 
 fn urlencoded(s: &str) -> String {
-    s.replace('{', "%7B")
-        .replace('}', "%7D")
-        .replace('"', "%22")
-        .replace(':', "%3A")
-        .replace(',', "%2C")
-        .replace('[', "%5B")
-        .replace(']', "%5D")
-        .replace(' ', "%20")
+    let mut result = String::with_capacity(s.len() * 2);
+    for c in s.chars() {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => result.push(c),
+            _ => {
+                for b in c.to_string().as_bytes() {
+                    result.push_str(&format!("%{:02X}", b));
+                }
+            }
+        }
+    }
+    result
 }
 
 fn parse_bookmarks_response(data: &Value) -> Result<(Vec<ClixTweet>, Option<String>)> {
@@ -299,5 +303,9 @@ fn parse_tweet_result(entry: &Value) -> Option<ClixTweet> {
         is_subscriber_only: None,
         url: None,
         tweet_url,
+        author_avatar: user["profile_image_url_https"]
+            .as_str()
+            .map(|u| u.replace("_normal.", "_bigger."))
+            .or_else(|| user["profile_image_url_https"].as_str().map(String::from)),
     })
 }

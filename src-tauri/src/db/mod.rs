@@ -60,11 +60,11 @@ impl Database {
                 reply_to_id, reply_to_handle, is_retweet, retweeted_by,
                 media_json, quoted_tweet_json,
                 likes, retweets, replies_count, quotes, bookmarks_count, views,
-                source, fetched_at, raw_json
+                source, fetched_at, raw_json, author_avatar
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                 ?11, ?12, ?13, ?14, ?15, ?16,
-                ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25
+                ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
             )",
         )?;
 
@@ -87,9 +87,14 @@ impl Database {
                 engagement.and_then(|e| e.quotes).unwrap_or(0),
                 engagement.and_then(|e| e.bookmarks).unwrap_or(0),
                 engagement.and_then(|e| e.views).unwrap_or(0),
-                source, now, raw,
+                source, now, raw, tweet.author_avatar,
             ])?;
             if rows > 0 { count += 1; }
+
+            // Always update avatar (even if tweet already exists)
+            if tweet.author_avatar.is_some() {
+                conn.execute("UPDATE tweets SET author_avatar = ?1 WHERE id = ?2 AND author_avatar IS NULL", rusqlite::params![tweet.author_avatar, tweet.id])?;
+            }
 
             if source == "bookmark" {
                 conn.execute("UPDATE tweets SET source = 'bookmark' WHERE id = ?1", rusqlite::params![tweet.id])?;
@@ -133,7 +138,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
                     t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
-                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
+                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media, t.author_avatar
              FROM tweets t JOIN tweets_vec v ON t.id = v.tweet_id
              WHERE v.embedding MATCH ?1 AND k = ?2
              ORDER BY distance",
@@ -154,12 +159,12 @@ impl Database {
         let query = if source_filter == Some("bookmark") {
             "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
                     tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
-                    (media_json IS NOT NULL AND media_json != '[]') as has_media
+                    (media_json IS NOT NULL AND media_json != '[]') as has_media, author_avatar
              FROM tweets WHERE source = 'bookmark' ORDER BY bookmark_order ASC LIMIT ?1 OFFSET ?2"
         } else {
             "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
                     tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
-                    (media_json IS NOT NULL AND media_json != '[]') as has_media
+                    (media_json IS NOT NULL AND media_json != '[]') as has_media, author_avatar
              FROM tweets ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
         };
         let mut stmt = conn.prepare(query)?;
@@ -174,13 +179,13 @@ impl Database {
         let sql = if source_filter.is_some() {
             "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
                     t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
-                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
+                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media, t.author_avatar
              FROM tweets t JOIN tweets_fts fts ON t.rowid = fts.rowid
              WHERE tweets_fts MATCH ?1 AND t.source = ?3 ORDER BY rank LIMIT ?2"
         } else {
             "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
                     t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
-                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
+                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media, t.author_avatar
              FROM tweets t JOIN tweets_fts fts ON t.rowid = fts.rowid
              WHERE tweets_fts MATCH ?1 ORDER BY rank LIMIT ?2"
         };
@@ -292,13 +297,14 @@ impl Database {
 
     pub fn tweets_without_ai_metadata(&self, limit: u32) -> Result<Vec<(String, String)>> {
         let conn = self.conn.lock().unwrap();
-        // Skip ANY tweet with an unresolved link — wait for the link resolver to fetch the real content first.
-        // This prevents garbage categorizations like "article-x", "long-form-article", etc.
+        // Skip short link-only tweets that haven't been resolved yet.
+        // Tweets with substantial text (>= 200 chars) are enriched even if they contain a link.
         let mut stmt = conn.prepare(
             "SELECT id, COALESCE(resolved_content, content) FROM tweets
              WHERE ai_enriched_at IS NULL
              AND NOT (
                 resolved_content IS NULL
+                AND length(content) < 200
                 AND (content LIKE '%x.com/%/status/%' OR content LIKE '%twitter.com/%/status/%' OR content LIKE '%x.com/i/article/%' OR content LIKE '%t.co/%')
              )
              ORDER BY CASE WHEN source = 'bookmark' THEN 0 ELSE 1 END
@@ -330,8 +336,14 @@ impl Database {
     pub fn store_resolved_content(&self, tweet_id: &str, content: &str, author: Option<&str>, url: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("UPDATE tweets SET resolved_content = ?1, resolved_author = ?2, resolved_url = ?3 WHERE id = ?4", rusqlite::params![content, author, url, tweet_id])?;
-        // Clear embedding so it gets re-embedded with the resolved content
+        // Re-embed with resolved content
         conn.execute("UPDATE tweets SET embedding = NULL WHERE id = ?1 AND embedding IS NOT NULL", rusqlite::params![tweet_id])?;
+        // Re-enrich short tweets that were skipped — now they have real content
+        conn.execute(
+            "UPDATE tweets SET ai_enriched_at = NULL, ai_category = NULL, ai_cluster = NULL, ai_summary = NULL, ai_topics = NULL, ai_type = NULL
+             WHERE id = ?1 AND length(content) < 200 AND ai_enriched_at IS NULL",
+            rusqlite::params![tweet_id],
+        )?;
         Ok(())
     }
 
@@ -412,6 +424,33 @@ impl Database {
         Ok(results)
     }
 
+    /// Search tweets by keyword and return the dots that contain matching tweets, with match counts
+    pub fn search_dots_by_content(&self, query: &str, limit: u32) -> Result<Vec<Dot>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT d.id, d.name, d.slug, d.parent_id, d.description, d.color, d.created_at,
+                    COUNT(DISTINCT td.tweet_id) as match_count
+             FROM dots d
+             JOIN tweet_dots td ON td.dot_id = d.id
+             JOIN tweets t ON td.tweet_id = t.id
+             JOIN tweets_fts fts ON t.rowid = fts.rowid
+             WHERE tweets_fts MATCH ?1 AND t.source = 'bookmark'
+             GROUP BY d.id
+             ORDER BY match_count DESC
+             LIMIT ?2"
+        )?;
+        let rows = stmt.query_map(rusqlite::params![query, limit], |row| {
+            Ok(Dot {
+                id: row.get(0)?, name: row.get(1)?, slug: row.get(2)?, parent_id: row.get(3)?,
+                description: row.get(4)?, color: row.get(5)?, created_at: row.get(6)?,
+                bookmark_count: row.get(7)?, children: vec![],
+            })
+        })?;
+        let mut dots = Vec::new();
+        for row in rows { dots.push(row?); }
+        Ok(dots)
+    }
+
     pub fn list_dots(&self) -> Result<Vec<Dot>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -458,7 +497,7 @@ impl Database {
         let mut tweet_stmt = conn.prepare(
             "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
                     t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
-                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
+                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media, t.author_avatar
              FROM tweets t JOIN tweet_dots td ON t.id = td.tweet_id
              WHERE td.dot_id = ?1 AND t.source = 'bookmark'
              ORDER BY t.bookmark_order ASC LIMIT ?2 OFFSET ?3"
@@ -503,6 +542,56 @@ impl Database {
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Merge dot `from_slug` into `into_slug`: move all tweets, delete the old dot
+    pub fn merge_dots(&self, from_slug: &str, into_slug: &str) -> Result<u32> {
+        let conn = self.conn.lock().unwrap();
+        let from_id: i64 = conn.query_row("SELECT id FROM dots WHERE slug = ?1", rusqlite::params![from_slug], |r| r.get(0))
+            .map_err(|_| anyhow::anyhow!("Dot '{}' not found", from_slug))?;
+        let into_id: i64 = conn.query_row("SELECT id FROM dots WHERE slug = ?1", rusqlite::params![into_slug], |r| r.get(0))
+            .map_err(|_| anyhow::anyhow!("Dot '{}' not found", into_slug))?;
+
+        // Move tweets (ignore duplicates)
+        let moved = conn.execute(
+            "INSERT OR IGNORE INTO tweet_dots (tweet_id, dot_id) SELECT tweet_id, ?1 FROM tweet_dots WHERE dot_id = ?2",
+            rusqlite::params![into_id, from_id],
+        )?;
+        // Update ai_cluster on moved tweets
+        conn.execute("UPDATE tweets SET ai_cluster = ?1 WHERE id IN (SELECT tweet_id FROM tweet_dots WHERE dot_id = ?2)", rusqlite::params![into_slug, from_id])?;
+        // Delete old assignments and dot
+        conn.execute("DELETE FROM tweet_dots WHERE dot_id = ?1", rusqlite::params![from_id])?;
+        conn.execute("DELETE FROM dots WHERE id = ?1", rusqlite::params![from_id])?;
+
+        log::info!("[db] Merged dot '{}' into '{}' ({} tweets moved)", from_slug, into_slug, moved);
+        Ok(moved as u32)
+    }
+
+    /// Rename a dot
+    pub fn rename_dot(&self, slug: &str, new_name: &str, new_slug: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE dots SET name = ?1, slug = ?2 WHERE slug = ?3", rusqlite::params![new_name, new_slug, slug])?;
+        conn.execute("UPDATE tweets SET ai_cluster = ?1 WHERE ai_cluster = ?2", rusqlite::params![new_slug, slug])?;
+        Ok(())
+    }
+
+    /// Get dots with sample tweet content for consolidation
+    pub fn dots_for_consolidation(&self) -> Result<Vec<(String, String, u32, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT d.slug, d.name,
+                    (SELECT COUNT(*) FROM tweet_dots td WHERE td.dot_id = d.id) as cnt,
+                    COALESCE((SELECT GROUP_CONCAT(substr(COALESCE(t.resolved_content, t.content), 1, 80), ' | ')
+                     FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id
+                     WHERE td.dot_id = d.id LIMIT 3), '')
+             FROM dots d ORDER BY cnt DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u32>(2)?, row.get::<_, String>(3)?))
+        })?;
+        let mut results = Vec::new();
+        for row in rows { results.push(row?); }
+        Ok(results)
     }
 
     pub fn assign_tweet_to_dot(&self, tweet_id: &str, dot_id: i64) -> Result<()> {
@@ -572,15 +661,8 @@ fn map_tweet_row(row: &rusqlite::Row) -> rusqlite::Result<TweetRow> {
         ai_cluster: row.get(12)?, ai_summary: row.get(13)?, ai_type: row.get(14)?,
         ai_topics: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
         has_media: row.get::<_, i32>(16).unwrap_or(0) != 0,
+        author_avatar: row.get(17).unwrap_or(None),
     })
-}
-
-pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 { return 0.0; }
-    dot / (norm_a * norm_b)
 }
 
 fn f32_slice_to_bytes(floats: &[f32]) -> &[u8] {
@@ -608,6 +690,7 @@ pub struct TweetRow {
     pub ai_type: Option<String>,
     pub ai_topics: Vec<String>,
     pub has_media: bool,
+    pub author_avatar: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, Clone)]

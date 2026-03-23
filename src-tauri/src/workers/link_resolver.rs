@@ -5,8 +5,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
-const RESOLVE_INTERVAL_SECS: u64 = 15;
-const BATCH_SIZE: u32 = 20;
+const RESOLVE_INTERVAL_SECS: u64 = 60;
+const BATCH_SIZE: u32 = 3;
 
 /// Extract a tweet ID from a URL like https://x.com/user/status/123456
 fn extract_tweet_id(url: &str) -> Option<String> {
@@ -84,8 +84,10 @@ async fn resolve_tco_redirect(url: &str) -> Option<String> {
 pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) {
     log::info!("Worker started: link resolver every {}s", RESOLVE_INTERVAL_SECS);
 
+    let mut backoff_secs = RESOLVE_INTERVAL_SECS;
+
     loop {
-        sleep(Duration::from_secs(RESOLVE_INTERVAL_SECS)).await;
+        sleep(Duration::from_secs(backoff_secs)).await;
 
         let _ = app_handle.emit("sync:event", SyncEvent {
             worker: "resolver".to_string(),
@@ -95,6 +97,7 @@ pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) 
 
         match resolve_batch(&db).await {
             Ok(count) => {
+                backoff_secs = RESOLVE_INTERVAL_SECS; // reset backoff on success
                 if count > 0 {
                     log::info!("[resolver] resolved {} tweet links", count);
                 }
@@ -105,11 +108,17 @@ pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) 
                 });
             }
             Err(e) => {
-                log::error!("[resolver] error: {}", e);
+                let err_str = e.to_string();
+                if err_str.contains("Rate limit") || err_str.contains("429") {
+                    backoff_secs = (backoff_secs * 2).min(900); // double backoff, max 15 min
+                    log::warn!("[resolver] Rate limited, backing off to {}s", backoff_secs);
+                } else {
+                    log::error!("[resolver] error: {}", e);
+                }
                 let _ = app_handle.emit("sync:event", SyncEvent {
                     worker: "resolver".to_string(),
                     status: "done".to_string(),
-                    detail: Some(format!("error: {}", e)),
+                    detail: Some(format!("backoff: {}s", backoff_secs)),
                 });
             }
         }
@@ -139,7 +148,7 @@ async fn resolve_batch(db: &Database) -> anyhow::Result<u32> {
     let resolved_urls: Vec<(String, String)> = futures::future::join_all(url_futures).await;
 
     // Phase 2: Fetch content in parallel (max 5 concurrent via semaphore)
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(5));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
     let clix = Clix::new();
 
     let mut handles = Vec::new();

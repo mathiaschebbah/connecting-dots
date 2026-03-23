@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ArrowLeft, Search, X as XIcon } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { TweetCard, type Tweet } from "../components/TweetCard";
 
@@ -27,7 +27,8 @@ export function DotDetail({ slug }: { slug: string }) {
   const [data, setData] = useState<DotDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [panelOpen, setPanelOpen] = useState(false);
+  const panelOpen = useAppStore((s) => s.webviewOpen);
+  const setPanelOpen = useAppStore((s) => s.setWebviewOpen);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const navigate = useAppStore((s) => s.navigate);
@@ -41,9 +42,9 @@ export function DotDetail({ slug }: { slug: string }) {
     const panelWidth = Math.floor(window.innerWidth / 2);
     const leftOffset = window.innerWidth - panelWidth;
 
+    setPanelOpen(true);
     try {
       await invoke("open_tweet_panel", { url, leftOffset, height: window.innerHeight, width: panelWidth });
-      setPanelOpen(true);
     } catch {
       invoke("open_in_browser", { url }).catch(() => {});
     }
@@ -118,7 +119,7 @@ export function DotDetail({ slug }: { slug: string }) {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => { closePanel(); back(); }}
-                className="p-2 -ml-2 rounded-full hover:bg-white/[0.08] transition-colors"
+                className="p-2 -ml-2 rounded-full hover:bg-white/[0.08] transition-all duration-150 active:scale-90"
                 aria-label="Retour"
               >
                 <ArrowLeft size={20} className="text-foreground" />
@@ -128,11 +129,6 @@ export function DotDetail({ slug }: { slug: string }) {
                 <p className="text-[13px] text-muted-foreground leading-tight">{dot.bookmark_count} signets</p>
               </div>
             </div>
-            {panelOpen && (
-              <button onClick={closePanel} className="p-2 rounded-full hover:bg-white/[0.08] transition-colors" aria-label="Fermer le tweet">
-                <XIcon size={20} className="text-foreground" />
-              </button>
-            )}
           </div>
         </div>
 
@@ -183,7 +179,7 @@ export function DotDetail({ slug }: { slug: string }) {
         </div>
       </div>
 
-      {/* Right: webview overlay placeholder */}
+      {/* Right: webview overlay area */}
       {panelOpen && (
         <div className="w-1/2 shrink-0 bg-background border-l border-border" />
       )}

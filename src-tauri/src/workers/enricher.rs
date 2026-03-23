@@ -5,13 +5,15 @@ use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
 const ENRICH_INTERVAL_SECS: u64 = 15;
-const BATCH_SIZE: u32 = 10;       // per sub-batch
-const PARALLEL_BATCHES: usize = 3; // 3 API calls in parallel = 30 tweets/cycle
+const BATCH_SIZE: u32 = 10;
+const PARALLEL_BATCHES: usize = 3;
+const CONSOLIDATION_EVERY_N_CYCLES: u32 = 40; // consolidate dots every ~10 minutes
 
 pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_handle: AppHandle) {
     log::info!("Worker started: AI enrichment every {}s ({} parallel batches of {})", ENRICH_INTERVAL_SECS, PARALLEL_BATCHES, BATCH_SIZE);
 
     let client = reqwest::Client::new();
+    let mut cycle_count = 0u32;
 
     loop {
         let _ = app_handle.emit("sync:event", SyncEvent {
@@ -25,6 +27,13 @@ pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_han
         let pending = db.tweets_without_ai_metadata(total_size).unwrap_or_default();
 
         if pending.is_empty() {
+            // Nothing to enrich — run consolidation if due
+            cycle_count += 1;
+            if cycle_count % CONSOLIDATION_EVERY_N_CYCLES == 0 {
+                if let Err(e) = consolidate_dots(&db, &client, &api_key).await {
+                    log::error!("[enricher] consolidation error: {}", e);
+                }
+            }
             let _ = app_handle.emit("sync:event", SyncEvent {
                 worker: "enricher".to_string(),
                 status: "done".to_string(),
@@ -185,6 +194,123 @@ Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown."#, dots_list);
         count += 1;
     }
     Ok(count)
+}
+
+/// Periodic consolidation: review all dots and merge/rename to converge toward stable organization
+async fn consolidate_dots(
+    db: &Database,
+    client: &reqwest::Client,
+    api_key: &str,
+) -> anyhow::Result<()> {
+    let dots = db.dots_for_consolidation()?;
+    if dots.len() < 5 { return Ok(()); } // too few dots to consolidate
+
+    log::info!("[enricher] Running consolidation on {} dots", dots.len());
+
+    let mut dots_text = String::new();
+    for (slug, name, count, samples) in &dots {
+        dots_text.push_str(&format!("- \"{}\" ({}) [{} signets] Exemples: {}\n", slug, name, count, &samples[..samples.len().min(200)]));
+    }
+
+    let prompt = format!(r#"Tu es un organisateur de signets. Voici la liste actuelle des "dots" (dossiers thématiques) :
+
+{}
+
+Suggère UNIQUEMENT des fusions de VRAIS DOUBLONS — deux dots qui parlent EXACTEMENT du même outil/concept sous deux noms différents.
+
+EXEMPLES DE MERGE CORRECT :
+- "rlm" et "recursive-language-models" → même concept, garder "rlm"
+- "gpt-5" et "gpt5" → même modèle, garder "gpt-5"
+- "claude-code" et "claude-code-cli" → même outil, garder "claude-code"
+
+EXEMPLES DE MERGE INTERDIT (produits/concepts différents) :
+- "claude-code" et "cursor" → deux outils différents
+- "codex" et "claude-code" → OpenAI Codex ≠ Claude Code
+- "notebooklm" et "claude" → Google ≠ Anthropic
+- "nextjs" et "indie-stack" → un framework ≠ une catégorie
+- "postgresql" et "system-design" → un outil ≠ un concept
+- "sam-3d" et "ai-agents" → vision ≠ agents
+- "web-scraping" et "rag" → sujets différents
+
+RÈGLES STRICTES :
+- Ne MERGE que des DOUBLONS EXACTS (même sujet, noms différents)
+- Ne merge JAMAIS un outil spécifique dans une catégorie large
+- Ne merge JAMAIS deux produits de compagnies différentes
+- En cas de doute, NE PAS MERGER
+- Maximum 5 actions par cycle
+- Préfère [] (rien) plutôt que des merges douteux
+
+Réponds avec un tableau JSON :
+[{{"action": "merge", "from": "slug-doublon", "into": "slug-principal"}}]
+
+Si rien à fusionner, réponds []. Pas de fences markdown."#, dots_text);
+
+    let body = serde_json::json!({
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 2048,
+        "messages": [{ "role": "user", "content": prompt }]
+    });
+
+    let response = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        anyhow::bail!("Consolidation API error: {}", text);
+    }
+
+    let resp: serde_json::Value = response.json().await?;
+    let content_text = resp["content"][0]["text"].as_str().unwrap_or("[]");
+
+    let mut clean = content_text.trim().to_string();
+    if clean.starts_with("```") { if let Some(pos) = clean.find('\n') { clean = clean[pos + 1..].to_string(); } }
+    if clean.ends_with("```") { clean = clean[..clean.len() - 3].to_string(); }
+
+    let actions: Vec<ConsolidationAction> = match serde_json::from_str(clean.trim()) {
+        Ok(v) => v,
+        Err(e) => { log::warn!("[enricher] Failed to parse consolidation: {}", e); vec![] }
+    };
+
+    let mut merges = 0u32;
+    let mut renames = 0u32;
+
+    for action in &actions {
+        match action {
+            ConsolidationAction::Merge { from, into } => {
+                match db.merge_dots(from, into) {
+                    Ok(n) => { merges += 1; log::info!("[consolidation] Merged '{}' → '{}' ({} tweets)", from, into, n); }
+                    Err(e) => log::warn!("[consolidation] Failed to merge '{}' → '{}': {}", from, into, e),
+                }
+            }
+            ConsolidationAction::Rename { slug, new_slug, new_name } => {
+                match db.rename_dot(slug, new_name, new_slug) {
+                    Ok(()) => { renames += 1; log::info!("[consolidation] Renamed '{}' → '{}' ({})", slug, new_slug, new_name); }
+                    Err(e) => log::warn!("[consolidation] Failed to rename '{}': {}", slug, e),
+                }
+            }
+        }
+    }
+
+    if merges > 0 || renames > 0 {
+        log::info!("[consolidation] Done: {} merges, {} renames", merges, renames);
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "action")]
+enum ConsolidationAction {
+    #[serde(rename = "merge")]
+    Merge { from: String, into: String },
+    #[serde(rename = "rename")]
+    Rename { slug: String, new_slug: String, new_name: String },
 }
 
 #[derive(Debug, serde::Deserialize)]

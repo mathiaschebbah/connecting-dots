@@ -17,6 +17,9 @@ interface AppState {
 
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+
+  webviewOpen: boolean;
+  setWebviewOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -44,4 +47,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+
+  webviewOpen: false,
+  setWebviewOpen: (webviewOpen) => set({ webviewOpen }),
 }));

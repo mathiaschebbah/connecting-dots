@@ -207,6 +207,11 @@ pub async fn get_dot_detail(state: State<'_, AppState>, slug: String, limit: Opt
 }
 
 #[tauri::command]
+pub async fn search_dots(state: State<'_, AppState>, query: String, limit: Option<u32>) -> Result<Vec<Dot>, String> {
+    state.db.search_dots_by_content(&query, limit.unwrap_or(20)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn backfill_dots(state: State<'_, AppState>) -> Result<u32, String> {
     state.db.backfill_dots().map_err(|e| e.to_string())
 }
@@ -221,25 +226,38 @@ pub async fn get_dashboard_stats(state: State<'_, AppState>) -> Result<Dashboard
 // ── Tweet webview (overlay on right half, main webview stays full size) ──
 
 #[tauri::command]
-pub async fn open_tweet_panel(app: tauri::AppHandle, url: String, left_offset: f64, _height: f64, width: f64) -> Result<bool, String> {
+pub async fn open_tweet_panel(app: tauri::AppHandle, url: String, _left_offset: f64, _height: f64, _width: f64) -> Result<bool, String> {
     use tauri::Manager;
     use tauri::webview::WebviewBuilder;
 
-    // Close existing if any
+    let parsed_url: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+
+    // If webview already exists, just navigate to the new URL (fast)
     if let Some(existing) = app.get_webview("tweet-panel") {
-        let _ = existing.close();
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        existing.eval(&format!("window.location.href = '{}';", parsed_url)).map_err(|e| e.to_string())?;
+        return Ok(true);
     }
 
-    let parsed_url: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    let builder = WebviewBuilder::new("tweet-panel", tauri::WebviewUrl::External(parsed_url));
+    // First time: create the webview (offset 40px from top for control bar)
+    let builder = WebviewBuilder::new("tweet-panel", tauri::WebviewUrl::External(parsed_url))
+        .on_navigation(|_url| true)
+        .initialization_script(r#"
+            document.addEventListener('click', function(e) {
+                const link = e.target.closest('a[target="_blank"]');
+                if (link) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.location.href = link.href;
+                }
+            }, true);
+            window.open = function(url) { if (url) window.location.href = url; };
+        "#);
 
     let win = app.get_window("main").ok_or("No main window")?;
-    // Use the actual window inner size for full coverage
     let size = win.inner_size().map_err(|e| e.to_string())?;
     win.add_child(
         builder,
-        tauri::Position::Logical(tauri::LogicalPosition::new(left_offset, 0.0)),
+        tauri::Position::Physical(tauri::PhysicalPosition::new((size.width / 2) as i32, 0)),
         tauri::Size::Physical(tauri::PhysicalSize::new(size.width / 2, size.height)),
     ).map_err(|e| e.to_string())?;
 
@@ -252,6 +270,24 @@ pub async fn close_tweet_panel(app: tauri::AppHandle) -> Result<bool, String> {
 
     if let Some(wv) = app.get_webview("tweet-panel") {
         let _ = wv.close();
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn webview_back(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    if let Some(wv) = app.get_webview("tweet-panel") {
+        wv.eval("window.history.back()").map_err(|e| e.to_string())?;
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn webview_forward(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    if let Some(wv) = app.get_webview("tweet-panel") {
+        wv.eval("window.history.forward()").map_err(|e| e.to_string())?;
     }
     Ok(true)
 }

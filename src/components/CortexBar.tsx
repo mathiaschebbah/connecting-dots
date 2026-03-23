@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Search, Settings, ChevronRight } from "lucide-react";
+import { Search, Settings, ChevronRight, ChevronLeft, X as XIcon } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { dotName } from "../lib/utils";
 
@@ -11,6 +12,8 @@ export function CortexBar() {
   const navigate = useAppStore((s) => s.navigate);
   const setSearchOpen = useAppStore((s) => s.setSearchOpen);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
+  const webviewOpen = useAppStore((s) => s.webviewOpen);
+  const setWebviewOpen = useAppStore((s) => s.setWebviewOpen);
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
@@ -20,8 +23,13 @@ export function CortexBar() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
+  async function closeWebview() {
+    try { await invoke("close_tweet_panel"); } catch {}
+    setWebviewOpen(false);
+  }
+
   return (
-    <div className="h-[53px] flex items-center gap-3 px-4 border-b border-border shrink-0 bg-background/80 backdrop-blur-md">
+    <div className="h-[53px] flex items-center gap-3 px-4 border-b border-border shrink-0 bg-background">
       <button onClick={() => navigate({ type: "dots" })} className="shrink-0" aria-label="Accueil">
         <span className="text-[15px] font-bold text-foreground">Connecting Dots</span>
       </button>
@@ -41,6 +49,21 @@ export function CortexBar() {
               {dotName(page.fromDot)}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Webview navigation — left side, always visible */}
+      {webviewOpen && (
+        <div className="flex items-center gap-0.5">
+          <button onClick={() => invoke("webview_back")} className="p-1.5 text-muted-foreground hover:text-foreground transition-all duration-150 rounded-full hover:bg-white/[0.08] active:scale-90" aria-label="Retour">
+            <ChevronLeft size={16} />
+          </button>
+          <button onClick={() => invoke("webview_forward")} className="p-1.5 text-muted-foreground hover:text-foreground transition-all duration-150 rounded-full hover:bg-white/[0.08] active:scale-90" aria-label="Suivant">
+            <ChevronRight size={16} />
+          </button>
+          <button onClick={closeWebview} className="p-1.5 text-muted-foreground hover:text-foreground transition-all duration-150 rounded-full hover:bg-white/[0.08] active:scale-90" aria-label="Fermer">
+            <XIcon size={16} />
+          </button>
         </div>
       )}
 

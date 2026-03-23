@@ -25,6 +25,8 @@ pub struct ClixTweet {
     pub is_subscriber_only: Option<bool>,
     pub url: Option<String>,
     pub tweet_url: Option<String>,
+    #[serde(default)]
+    pub author_avatar: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, serde::Serialize)]
@@ -51,34 +53,6 @@ pub struct ClixArticle {
     pub markdown: Option<String>,
 }
 
-/// User profile from clix
-#[derive(Debug, Deserialize, Clone, serde::Serialize)]
-pub struct ClixUser {
-    pub id: String,
-    pub name: String,
-    pub handle: String,
-    pub bio: Option<String>,
-    pub location: Option<String>,
-    pub website: Option<String>,
-    pub verified: Option<bool>,
-    pub followers_count: Option<i64>,
-    pub following_count: Option<i64>,
-    pub tweet_count: Option<i64>,
-    pub listed_count: Option<i64>,
-    pub created_at: Option<String>,
-    pub profile_image_url: Option<String>,
-    pub profile_banner_url: Option<String>,
-    pub pinned_tweet_id: Option<String>,
-}
-
-/// Trending topic
-#[derive(Debug, Deserialize, Clone, serde::Serialize)]
-pub struct ClixTrending {
-    pub name: String,
-    pub tweet_count: Option<i64>,
-    pub context: Option<String>,
-    pub url: Option<String>,
-}
 
 pub struct Clix {
     command: String,
@@ -140,27 +114,36 @@ impl Clix {
         Ok(tweets)
     }
 
-    // ── Feed ──
-
-    pub fn feed(&self, feed_type: &str, count: u32) -> Result<Vec<ClixTweet>> {
-        let raw = self.run(&[
-            "feed",
-            "--type",
-            feed_type,
-            "--json",
-            "--count",
-            &count.to_string(),
-        ])?;
-        let tweets: Vec<ClixTweet> = serde_json::from_value(raw)?;
-        Ok(tweets)
-    }
-
     // ── Tweet ──
 
     pub fn tweet_detail(&self, tweet_id: &str) -> Result<ClixTweetDetail> {
         let raw = self.run(&["tweet", "--json", tweet_id])?;
-        let detail: ClixTweetDetail = serde_json::from_value(raw)?;
-        Ok(detail)
+
+        // clix returns different formats depending on the tweet:
+        // - Array of tweets (thread): [{tweet1}, {tweet2}, ...]
+        // - Single object: {tweet, article}
+        // - Single tweet object: {id, text, ...}
+
+        if let Some(arr) = raw.as_array() {
+            // It's a thread array — find the tweet matching our ID
+            let tweet = arr.iter()
+                .find_map(|v| {
+                    let t: ClixTweet = serde_json::from_value(v.clone()).ok()?;
+                    if t.id == tweet_id { Some(t) } else { None }
+                })
+                .or_else(|| {
+                    // Fallback: take the first tweet
+                    arr.first().and_then(|v| serde_json::from_value(v.clone()).ok())
+                })
+                .ok_or_else(|| anyhow::anyhow!("Empty response from clix"))?;
+            Ok(ClixTweetDetail { tweet, article: None })
+        } else if let Ok(detail) = serde_json::from_value::<ClixTweetDetail>(raw.clone()) {
+            Ok(detail)
+        } else {
+            // Single tweet object
+            let tweet: ClixTweet = serde_json::from_value(raw)?;
+            Ok(ClixTweetDetail { tweet, article: None })
+        }
     }
 
     pub fn tweet_thread(&self, tweet_id: &str) -> Result<Vec<ClixTweet>> {
@@ -177,32 +160,4 @@ impl Clix {
         Ok(tweets)
     }
 
-    // ── User ──
-
-    pub fn user_profile(&self, handle: &str) -> Result<ClixUser> {
-        let raw = self.run(&["user", "--json", handle])?;
-        let user: ClixUser = serde_json::from_value(raw)?;
-        Ok(user)
-    }
-
-    pub fn user_tweets(&self, handle: &str, count: u32) -> Result<Vec<ClixTweet>> {
-        let raw = self.run(&[
-            "user",
-            "--json",
-            handle,
-            "tweets",
-            "--count",
-            &count.to_string(),
-        ])?;
-        let tweets: Vec<ClixTweet> = serde_json::from_value(raw)?;
-        Ok(tweets)
-    }
-
-    // ── Trending ──
-
-    pub fn trending(&self) -> Result<Vec<ClixTrending>> {
-        let raw = self.run(&["trending", "--json"])?;
-        let topics: Vec<ClixTrending> = serde_json::from_value(raw)?;
-        Ok(topics)
-    }
 }

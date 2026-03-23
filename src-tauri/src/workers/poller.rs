@@ -7,13 +7,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
 #[derive(Clone)]
-pub enum PollSource {
-    Bookmarks,
-}
-
-#[derive(Clone)]
 pub struct PollConfig {
-    pub source: PollSource,
     pub interval_secs: u64,
 }
 
@@ -56,7 +50,7 @@ pub async fn poll_loop_with_events(db: Arc<Database>, embedder: Arc<Embedder>, c
 async fn poll_bookmarks(db: &Database, embedder: &Embedder) -> anyhow::Result<(u32, u32)> {
     let tweets = tokio::task::spawn_blocking(|| {
         let fetcher = BookmarksFetcher::from_clix_config()?;
-        fetcher.fetch_all(20)
+        fetcher.fetch_all(50)
     }).await??;
 
     let new_count = db.upsert_tweets(&tweets, "bookmark")?;

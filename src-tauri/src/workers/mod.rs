@@ -20,7 +20,7 @@ pub fn start_all(db: Arc<Database>, embedder: Arc<Embedder>, api_key: Option<Str
         let handle = app_handle.clone();
         tauri::async_runtime::spawn(poller::poll_loop_with_events(
             db.clone(), embedder.clone(),
-            poller::PollConfig { source: poller::PollSource::Bookmarks, interval_secs: 60 },
+            poller::PollConfig { interval_secs: 300 },
             handle,
         ));
     }

@@ -88,12 +88,15 @@ pub fn run() {
             // Dots
             commands::list_dots,
             commands::get_dot_detail,
+            commands::search_dots,
             commands::backfill_dots,
             // Dashboard
             commands::get_dashboard_stats,
             // Tweet panel
             commands::open_tweet_panel,
             commands::close_tweet_panel,
+            commands::webview_back,
+            commands::webview_forward,
             commands::open_in_browser,
         ])
         .run(tauri::generate_context!())

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS tweets (
     ai_topics TEXT,
     ai_type TEXT,
     ai_enriched_at TEXT,
+    author_avatar TEXT,
     resolved_content TEXT,
     resolved_author TEXT,
     resolved_url TEXT
