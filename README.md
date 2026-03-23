@@ -1,38 +1,34 @@
 ## Connecting Dots
 
-Plateforme de veille technologique et sociale active pour centres de R&D, branchée sur X/Twitter.
+Connecting Dots est un moteur de signets pour X/Twitter — une poupee russe qui organise automatiquement vos bookmarks en sujets navigables, transformant des centaines de posts sauvegardes a la volee en une bibliotheque thematique vivante ou chaque idee retrouve sa place et ses connexions.
 
-Transforme le flux chaotique de tweets en un **moteur de pensée structuré** où chaque post s'inscrit dans un nuage conceptuel, permettant de naviguer efficacement dans les courants de la recherche, de la pensée et de la créativité communautaire.
+### Le concept
 
-### Le problème
+Vous bookmarkez sur X. Connecting Dots s'en occupe : chaque signet est analyse par IA, classe dans un "dot" (un sujet comme Claude Code, RAG, DSPy), et relie semantiquement aux autres. Cliquez sur un dot, retrouvez vos signets. Cliquez sur un signet, lisez-le directement dans X, integre a l'application.
 
-Les tweets pullulent et c'est difficile d'y voir plus clair. Les signaux faibles sont noyés dans la hype, les tendances émergentes sont invisibles sans outils adaptés.
+### Comment ca marche
 
-### La solution
+- **Ingestion continue** — L'app poll vos signets X en arriere-plan et les indexe automatiquement
+- **Categorisation IA** — Claude Sonnet analyse chaque signet et l'assigne au bon dot avec un resume en francais
+- **Resolution de liens** — Les tweets qui ne sont que des liens vers des articles X ou des threads sont resolus : le contenu complet est extrait et indexe
+- **Recherche semantique** — Embeddings locaux (all-MiniLM-L6-v2) pour retrouver des signets par le sens, pas juste les mots
+- **Navigation integree** — Split-view : vos dots a gauche, le tweet sur X a droite, dans la meme fenetre
 
-- **Capture automatique** — Workers en arrière-plan qui poll bookmarks, feed et topics en continu
-- **Enrichissement IA** — Chaque tweet est classifié (catégorie, cluster, type, résumé) par des agents IA
-- **Connexions sémantiques** — Embeddings locaux + graph de similarité pour relier ce que Twitter ne relie pas
-- **Détection de signaux** — Dissociation hype/sérieux, détection de tendances, clustering émergent
+### Stack
 
-### Architecture
+- **App** : Tauri 2 (Rust + React/TypeScript)
+- **DB** : SQLite + sqlite-vec (recherche vectorielle locale)
+- **IA** : Claude Sonnet 4.6 (categorisation), fastembed (embeddings locaux)
+- **UI** : shadcn/ui, dark theme natif X/Twitter
+- **Twitter** : clix (API non-officielle via cookies)
 
-- **Backend** : Rust (Tauri) — workers async tokio, SQLite + sqlite-vec, fastembed (all-MiniLM-L6-v2)
-- **Frontend** : React 19 + TypeScript — Zustand, TanStack Query, Tailwind CSS, react-force-graph
-- **IA** : Claude API pour l'enrichissement et l'agent conversationnel
+### Navigation
 
-### Vues (Lenses)
+```
+Dots (grille de sujets) → Dot (liste de signets) → Tweet (vue X integree)
+```
 
-| Lens | Usage |
-|------|-------|
-| **River** | Flux chronologique avec recherche fulltext/sémantique |
-| **Clusters** | Groupement par thème IA — vue macro des tendances |
-| **Graph** | Réseau de similarité — visualiser les connexions |
-| **Boards** | Kanban pour structurer des projets de veille |
-
-### Agents
-
-Les agents sont omniprésents : poller, enricher, link resolver, et agent conversationnel. L'application est data-intensive — ingestion, enrichissement, indexation et connexion en continu.
+Cmd+K pour rechercher. L'agent IA est accessible depuis la recherche pour poser des questions sur vos signets.
 
 ## Licence
 
