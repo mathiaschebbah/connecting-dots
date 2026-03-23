@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Heart, Repeat2, MessageCircle, BarChart2 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -59,8 +60,34 @@ function isLinkOnly(content: string): boolean {
   return content.replace(/https?:\/\/\S+/g, "").trim().length < 20;
 }
 
+function Avatar({ handle }: { handle: string }) {
+  const color = getInitialColor(handle);
+  const [failed, setFailed] = useState(false);
+  const src = `https://unavatar.io/x/${handle}`;
+
+  if (failed) {
+    return (
+      <div
+        className="w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold shrink-0"
+        style={{ backgroundColor: color + "25", color }}
+      >
+        {handle[0]?.toUpperCase()}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={handle}
+      className="w-10 h-10 rounded-full shrink-0 bg-secondary object-cover"
+      onError={() => setFailed(true)}
+      loading="lazy"
+    />
+  );
+}
+
 export function TweetCard({ tweet, compact, hideTags }: { tweet: Tweet; compact?: boolean; hideTags?: boolean }) {
-  const avatarColor = getInitialColor(tweet.author_handle);
   const hasSummary = !isUselessSummary(tweet.ai_summary);
   const linkOnly = isLinkOnly(tweet.content);
 
@@ -71,13 +98,8 @@ export function TweetCard({ tweet, compact, hideTags }: { tweet: Tweet; compact?
         "hover:bg-white/[0.03] transition-colors duration-100 cursor-pointer"
       )}
     >
-      {/* Avatar — exactly like X: 40px, round */}
-      <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold shrink-0"
-        style={{ backgroundColor: avatarColor + "25", color: avatarColor }}
-      >
-        {tweet.author_handle[0]?.toUpperCase()}
-      </div>
+      {/* Avatar */}
+      <Avatar handle={tweet.author_handle} />
 
       {/* Content column */}
       <div className="flex-1 min-w-0">
@@ -148,10 +170,6 @@ export function TweetCard({ tweet, compact, hideTags }: { tweet: Tweet; compact?
       </div>
     </div>
   );
-}
-
-export function TweetRow({ tweet }: { tweet: Tweet }) {
-  return <TweetCard tweet={tweet} compact />;
 }
 
 export type { Tweet };

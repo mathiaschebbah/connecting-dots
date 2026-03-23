@@ -139,7 +139,7 @@ export function Agent() {
         <p className="text-[13px] text-muted-foreground">Explore tes signets, cherche sur X, organise par tags</p>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4" aria-live="polite">
         {messages.length === 0 && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -227,6 +227,7 @@ export function Agent() {
             type="submit"
             disabled={isRunning || !input.trim()}
             className="px-4 py-2 bg-foreground text-background rounded-md text-[13px] font-medium hover:opacity-90 disabled:opacity-30 transition-colors"
+            aria-label="Envoyer"
           >
             <Send size={16} />
           </button>
@@ -245,10 +246,10 @@ function normalizeTweet(raw: Record<string, unknown>): Tweet | null {
       content: String(raw.content || raw.text || ""),
       created_at: raw.created_at ? String(raw.created_at) : null,
       tweet_url: raw.tweet_url ? String(raw.tweet_url) : null,
-      likes: Number(raw.likes || (raw.engagement as any)?.likes || 0),
-      retweets: Number(raw.retweets || (raw.engagement as any)?.retweets || 0),
-      replies_count: Number(raw.replies_count || (raw.engagement as any)?.replies || 0),
-      views: Number(raw.views || (raw.engagement as any)?.views || 0),
+      likes: Number(raw.likes || (raw.engagement && typeof raw.engagement === "object" ? (raw.engagement as Record<string, unknown>).likes : 0) || 0),
+      retweets: Number(raw.retweets || (raw.engagement && typeof raw.engagement === "object" ? (raw.engagement as Record<string, unknown>).retweets : 0) || 0),
+      replies_count: Number(raw.replies_count || (raw.engagement && typeof raw.engagement === "object" ? (raw.engagement as Record<string, unknown>).replies : 0) || 0),
+      views: Number(raw.views || (raw.engagement && typeof raw.engagement === "object" ? (raw.engagement as Record<string, unknown>).views : 0) || 0),
       source: String(raw.source || "agent"),
     };
   } catch {

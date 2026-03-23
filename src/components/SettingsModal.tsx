@@ -27,7 +27,7 @@ export function SettingsModal({ open, onClose }: Props) {
   const [topics, setTopics] = useState<MonitoredTopic[]>([]);
 
   const loadTopics = () => {
-    invoke<MonitoredTopic[]>("list_monitored_topics").then(setTopics).catch(console.error);
+    invoke<MonitoredTopic[]>("list_monitored_topics").then(setTopics).catch(() => { /* silently fail */ });
   };
 
   useEffect(() => {
@@ -76,7 +76,7 @@ export function SettingsModal({ open, onClose }: Props) {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4" onClick={onClose}>
+      <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Parametres">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -93,7 +93,7 @@ export function SettingsModal({ open, onClose }: Props) {
         >
           <div className="flex items-center justify-between px-6 py-4 border-b border-border">
             <span className="text-[15px] font-semibold tracking-tight text-foreground">Parametres</span>
-            <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-secondary transition-all">
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-secondary transition-all" aria-label="Fermer">
               <X size={18} />
             </button>
           </div>
@@ -150,6 +150,7 @@ export function SettingsModal({ open, onClose }: Props) {
                           loadTopics();
                         }}
                         className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 rounded-lg hover:bg-card"
+                        aria-label="Supprimer"
                       >
                         <Trash2 size={12} />
                       </button>

@@ -2,12 +2,9 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Search, Settings, ChevronRight } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
+import { dotName } from "../lib/utils";
 
 interface SyncEvent { worker: string; status: string; detail: string | null }
-
-function slugToName(slug: string) {
-  return slug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-}
 
 export function CortexBar() {
   const page = useAppStore((s) => s.page);
@@ -25,7 +22,7 @@ export function CortexBar() {
 
   return (
     <div className="h-[53px] flex items-center gap-3 px-4 border-b border-border shrink-0 bg-background/80 backdrop-blur-md">
-      <button onClick={() => navigate({ type: "dots" })} className="shrink-0">
+      <button onClick={() => navigate({ type: "dots" })} className="shrink-0" aria-label="Accueil">
         <span className="text-[15px] font-bold text-foreground">Connecting Dots</span>
       </button>
 
@@ -33,14 +30,15 @@ export function CortexBar() {
         <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground min-w-0">
           <ChevronRight size={12} className="shrink-0" />
           {page.type === "dot" && (
-            <span className="text-foreground font-medium truncate">{slugToName(page.slug)}</span>
+            <span className="text-foreground font-medium truncate">{dotName(page.slug)}</span>
           )}
           {page.type === "tweet" && page.fromDot && (
             <button
               onClick={() => navigate({ type: "dot", slug: page.fromDot! })}
               className="text-foreground hover:underline font-medium truncate"
+              aria-label="Retour au sujet"
             >
-              {slugToName(page.fromDot)}
+              {dotName(page.fromDot)}
             </button>
           )}
         </div>
@@ -55,11 +53,11 @@ export function CortexBar() {
 
       <div className="flex-1" />
 
-      <button onClick={() => setSearchOpen(true)} className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-white/[0.08]">
+      <button onClick={() => setSearchOpen(true)} className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-white/[0.08]" aria-label="Rechercher">
         <Search size={18} />
       </button>
 
-      <button onClick={() => setSettingsOpen(true)} className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-white/[0.08]">
+      <button onClick={() => setSettingsOpen(true)} className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-white/[0.08]" aria-label="Parametres">
         <Settings size={18} />
       </button>
     </div>

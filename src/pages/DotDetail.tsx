@@ -38,7 +38,6 @@ export function DotDetail({ slug }: { slug: string }) {
     const el = containerRef.current;
     if (!el) { invoke("open_in_browser", { url }).catch(() => {}); return; }
 
-    const rect = el.getBoundingClientRect();
     const panelWidth = Math.floor(window.innerWidth / 2);
     const leftOffset = window.innerWidth - panelWidth;
 
@@ -59,8 +58,8 @@ export function DotDetail({ slug }: { slug: string }) {
     try {
       const result = await invoke<DotDetailData | null>("get_dot_detail", { slug, limit: 100, offset: 0, bookmarksOnly: true });
       setData(result);
-    } catch (e) {
-      console.error("Failed to load dot:", e);
+    } catch {
+      /* silently fail */
     } finally { setLoading(false); }
   }, [slug]);
 
@@ -110,7 +109,7 @@ export function DotDetail({ slug }: { slug: string }) {
       {/* Left panel */}
       <div
         ref={scrollRef}
-        className={`overflow-auto transition-all duration-200 ${panelOpen ? "border-r border-[#38383d]" : ""}`}
+        className={`overflow-auto transition-all duration-200 ${panelOpen ? "border-r border-border" : ""}`}
         style={{ width: panelOpen ? "50%" : "100%" }}
       >
         {/* Sticky header */}
@@ -120,6 +119,7 @@ export function DotDetail({ slug }: { slug: string }) {
               <button
                 onClick={() => { closePanel(); back(); }}
                 className="p-2 -ml-2 rounded-full hover:bg-white/[0.08] transition-colors"
+                aria-label="Retour"
               >
                 <ArrowLeft size={20} className="text-foreground" />
               </button>
@@ -129,7 +129,7 @@ export function DotDetail({ slug }: { slug: string }) {
               </div>
             </div>
             {panelOpen && (
-              <button onClick={closePanel} className="p-2 rounded-full hover:bg-white/[0.08] transition-colors">
+              <button onClick={closePanel} className="p-2 rounded-full hover:bg-white/[0.08] transition-colors" aria-label="Fermer le tweet">
                 <XIcon size={20} className="text-foreground" />
               </button>
             )}
@@ -157,7 +157,9 @@ export function DotDetail({ slug }: { slug: string }) {
             <div className="px-4 pt-1 pb-2">
               <div className="relative">
                 <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <label htmlFor="search-dot-detail" className="sr-only">Rechercher</label>
                 <input
+                  id="search-dot-detail"
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}

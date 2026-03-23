@@ -71,10 +71,12 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
-      <CortexBar />
-      <div className="flex-1 overflow-hidden flex flex-col">
+      <header>
+        <CortexBar />
+      </header>
+      <main className="flex-1 overflow-hidden flex flex-col">
         {content}
-      </div>
+      </main>
       <UnifiedSearch />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

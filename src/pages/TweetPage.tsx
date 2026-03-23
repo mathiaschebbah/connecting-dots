@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { TweetCard, type Tweet } from "../components/TweetCard";
-import { cn } from "../lib/utils";
+import { cn, dotName } from "../lib/utils";
 
 interface TweetFull {
   id: string;
@@ -125,7 +125,7 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
         catch { setThread([]); }
         setThreadLoading(false);
       }
-    } catch (e) { console.error(e); }
+    } catch { /* silently fail */ }
     setLoading(false);
   }
 
@@ -172,9 +172,9 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
         <div className="max-w-2xl mx-auto px-6 pt-6 pb-20">
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
             {/* Back */}
-            <button onClick={back} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-6">
+            <button onClick={back} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-6" aria-label="Retour">
               <ArrowLeft size={13} />
-              {fromDot ? fromDot.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : "Retour"}
+              {fromDot ? dotName(fromDot) : "Retour"}
             </button>
 
             {/* Thread */}
@@ -281,7 +281,7 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
                 {tags.map((tag) => (
                   <span key={tag.id} className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-card text-foreground/70 border border-border">
                     {tag.name}
-                    <button onClick={() => removeTag(tag.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400"><Trash2 size={9} /></button>
+                    <button onClick={() => removeTag(tag.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400" aria-label="Retirer le tag"><Trash2 size={9} /></button>
                   </span>
                 ))}
                 <input value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTag()}
@@ -308,8 +308,8 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
                       <>
                         <p className="flex-1 text-xs text-foreground/70 whitespace-pre-wrap">{note.content}</p>
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => { setEditingNote(note.id); setEditNoteContent(note.content); }} className="text-muted-foreground hover:text-foreground"><Pencil size={11} /></button>
-                          <button onClick={() => deleteNote(note.id)} className="text-muted-foreground hover:text-red-400"><Trash2 size={11} /></button>
+                          <button onClick={() => { setEditingNote(note.id); setEditNoteContent(note.content); }} className="text-muted-foreground hover:text-foreground" aria-label="Modifier"><Pencil size={11} /></button>
+                          <button onClick={() => deleteNote(note.id)} className="text-muted-foreground hover:text-red-400" aria-label="Supprimer"><Trash2 size={11} /></button>
                         </div>
                       </>
                     )}
@@ -343,7 +343,8 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
       >
         {!chatOpen ? (
           <button onClick={() => setChatOpen(true)}
-            className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground hover:text-foreground transition-colors">
+            className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Ouvrir l'agent">
             <Bot size={18} />
             <span className="text-[9px] font-medium" style={{ writingMode: "vertical-rl" }}>Agent</span>
           </button>
@@ -351,7 +352,7 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
           <>
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-2"><Bot size={14} className="text-foreground" /><span className="text-xs font-medium text-foreground">Agent</span></div>
-              <button onClick={() => setChatOpen(false)} className="text-muted-foreground hover:text-foreground text-[11px]">Fermer</button>
+              <button onClick={() => setChatOpen(false)} className="text-muted-foreground hover:text-foreground text-[11px]" aria-label="Fermer l'agent">Fermer</button>
             </div>
             <div ref={chatRef} className="flex-1 overflow-auto px-4 py-4 space-y-3">
               {chatMessages.length === 0 && (
@@ -378,7 +379,7 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
               <form onSubmit={(e) => { e.preventDefault(); sendChat(); }} className="flex gap-2">
                 <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Demande..."
                   disabled={chatRunning} className="flex-1 px-3 py-2 bg-card border border-border rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50" />
-                <button type="submit" disabled={chatRunning || !chatInput.trim()} className="px-3 py-2 bg-foreground text-background rounded-lg disabled:opacity-30 transition-colors"><Send size={13} /></button>
+                <button type="submit" disabled={chatRunning || !chatInput.trim()} className="px-3 py-2 bg-foreground text-background rounded-lg disabled:opacity-30 transition-colors" aria-label="Envoyer"><Send size={13} /></button>
               </form>
             </div>
           </>

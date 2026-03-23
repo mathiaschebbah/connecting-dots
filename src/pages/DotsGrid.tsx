@@ -22,11 +22,15 @@ function DotCard({ dot, onClick }: { dot: Dot; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="text-left w-full border border-border rounded-xl px-5 py-4 hover:bg-white/[0.03] transition-colors duration-100 cursor-pointer"
+      className="text-left w-full border border-border rounded-xl px-4 py-3.5 hover:bg-white/[0.03] transition-colors duration-100 cursor-pointer"
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[15px] font-bold text-foreground truncate">{dot.name}</span>
-        <span className="text-[13px] text-muted-foreground tabular-nums shrink-0">{dot.bookmark_count}</span>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[14px] font-bold text-foreground truncate leading-tight">
+          {dot.name}
+        </span>
+        <span className="text-[13px] text-muted-foreground tabular-nums shrink-0">
+          {dot.bookmark_count}
+        </span>
       </div>
     </button>
   );
@@ -50,8 +54,8 @@ export function DotsGrid() {
           if (count > 0) setDots(await invoke<Dot[]>("list_dots"));
         } catch {} finally { setBackfilling(false); }
       }
-    } catch (e) {
-      console.error("Failed to load dots:", e);
+    } catch {
+      /* silently fail */
     } finally { setLoading(false); }
   }, [backfilling]);
 
@@ -80,11 +84,13 @@ export function DotsGrid() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="max-w-[1200px] mx-auto px-6 pt-3 pb-20">
-        {/* Search */}
-        <div className="relative mb-4 max-w-md">
+      <div className="max-w-5xl mx-auto px-6 pt-4 pb-20">
+        {/* Search — full width */}
+        <div className="relative max-w-sm mb-5">
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <label htmlFor="search-dots" className="sr-only">Rechercher</label>
           <input
+            id="search-dots"
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -99,7 +105,7 @@ export function DotsGrid() {
             {dots.length === 0 ? "Tes signets sont en cours d'analyse" : "Aucun sujet ne correspond"}
           </p>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {filtered.map((dot) => (
               <DotCard key={dot.id} dot={dot} onClick={() => navigate({ type: "dot", slug: dot.slug })} />
             ))}

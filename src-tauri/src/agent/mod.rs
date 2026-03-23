@@ -26,28 +26,24 @@ pub enum AgentEvent {
     Error { message: String },
 }
 
-const SYSTEM_PROMPT: &str = r#"Tu es l'agent IA de Connecting Dots, une plateforme de veille technologique pour centres de R&D branchée sur Twitter/X. Tu aides le chercheur à explorer, organiser et analyser les signaux dans son flux et ses signets.
+const SYSTEM_PROMPT: &str = r#"Tu es l'agent IA de Connecting Dots, un moteur de signets X/Twitter qui organise les bookmarks en "dots" (dossiers thématiques).
 
 RÈGLES :
-- Utilise TOUJOURS les outils de manière proactive. N'attends pas la permission.
-- Quand l'utilisateur dit "tag" ou "organise", cherche immédiatement dans les signets et tagge avec les IDs des résultats.
-- Les résultats de search_bookmarks incluent les IDs au format "(id:XXXXX)". Utilise-les directement.
-- Tagge en masse sans hésiter. Fais-le et montre les résultats.
-- Ne demande jamais "tu veux que je...?" — fais-le et montre ce que tu as fait.
-- Sois concis et orienté résultat.
+- Utilise TOUJOURS les outils de manière proactive. Fais-le et montre les résultats.
+- Sois concis et orienté résultat. Parle toujours en français.
 
-TON RÔLE SPÉCIFIQUE :
-- Détecte les signaux faibles : papiers peu cités qui émergent, outils qui apparaissent dans plusieurs conversations indépendantes.
-- Connecte les points : relie des tweets de domaines différents qui convergent vers une même tendance.
-- Sépare le signal du bruit : distingue les annonces substantielles des posts viraux sans fond.
-- Parle toujours en français.
+TON RÔLE :
+- Explorer les signets par sujet, trouver des connexions entre dots.
+- Chercher sur Twitter pour compléter un sujet.
+- Taguer et organiser les signets.
 
-Outils disponibles :
-- search_bookmarks : Recherche sémantique dans les signets. Retourne les tweets les plus pertinents.
+Outils :
+- list_dots : Liste tous les dots existants (sujets). Utilise-le pour connaître l'organisation actuelle.
+- search_bookmarks : Recherche sémantique dans les signets.
 - search_twitter : Recherche live sur Twitter/X.
-- find_similar : Trouve les tweets similaires par similarité sémantique.
-- tag_tweet : Ajoute un tag à un tweet via son ID.
-- get_tweet_info : Détails complets d'un tweet spécifique.
+- find_similar : Tweets similaires par similarité sémantique.
+- tag_tweet : Ajouter un tag à un tweet.
+- get_tweet_info : Détails complets d'un tweet.
 "#;
 
 pub async fn run_agent(
@@ -120,6 +116,15 @@ async fn run_agent_inner(
                     "tag": { "type": "string", "description": "Tag name to add" }
                 },
                 "required": ["tweet_id", "tag"]
+            }
+        },
+        {
+            "name": "list_dots",
+            "description": "List all existing dots (topic folders) with their names and bookmark counts. Use this to see how bookmarks are organized.",
+            "input_schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
             }
         },
         {
@@ -290,6 +295,17 @@ async fn execute_tool(
                     Ok(()) => serde_json::json!({"success": true, "tag": tag}),
                     Err(e) => serde_json::json!({"error": e.to_string()}),
                 },
+                Err(e) => serde_json::json!({"error": e.to_string()}),
+            }
+        }
+        "list_dots" => {
+            match db.list_dot_slugs() {
+                Ok(dots) => {
+                    let list: Vec<serde_json::Value> = dots.iter().map(|(slug, name)| {
+                        serde_json::json!({"slug": slug, "name": name})
+                    }).collect();
+                    serde_json::json!({"dots": list, "count": list.len()})
+                }
                 Err(e) => serde_json::json!({"error": e.to_string()}),
             }
         }

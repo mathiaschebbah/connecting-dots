@@ -59,12 +59,14 @@ export function UnifiedSearch() {
           break;
         case "tool_result":
           if (Array.isArray(e.result)) {
-            const tweets = (e.result as any[]).filter((r: any) => r.id && r.content).map((r: any) => ({
-              id: String(r.id), author_handle: String(r.author_handle || ""), author_name: r.author_name ? String(r.author_name) : null,
-              content: String(r.content || r.text || ""), created_at: r.created_at ? String(r.created_at) : null,
-              tweet_url: r.tweet_url ? String(r.tweet_url) : null, likes: Number(r.likes || 0), retweets: Number(r.retweets || 0),
-              replies_count: Number(r.replies_count || 0), views: Number(r.views || 0), source: String(r.source || "agent"),
-            })) as Tweet[];
+            const tweets = (e.result as Record<string, unknown>[])
+              .filter((r) => r.id && r.content)
+              .map((r): Tweet => ({
+                id: String(r.id), author_handle: String(r.author_handle || ""), author_name: r.author_name ? String(r.author_name) : null,
+                content: String(r.content || r.text || ""), created_at: r.created_at ? String(r.created_at) : null,
+                tweet_url: r.tweet_url ? String(r.tweet_url) : null, likes: Number(r.likes || 0), retweets: Number(r.retweets || 0),
+                replies_count: Number(r.replies_count || 0), views: Number(r.views || 0), source: String(r.source || "agent"),
+              }));
             if (tweets.length > 0) setResults(tweets);
           }
           break;
@@ -120,8 +122,8 @@ export function UnifiedSearch() {
         try {
           const fulltext = await invoke<Tweet[]>("search_tweets", { query: q, limit: 20 });
           setResults(fulltext);
-        } catch (e) {
-          console.error(e);
+        } catch {
+          /* silently fail */
         }
       } finally {
         setSearching(false);
@@ -164,7 +166,7 @@ export function UnifiedSearch() {
               className="flex-1 text-sm text-foreground placeholder-muted-foreground bg-transparent outline-none"
             />
             {(searching || agentRunning) && <Loader2 size={14} className="text-foreground animate-spin" />}
-            <button onClick={() => setSearchOpen(false)} className="p-1 text-muted-foreground hover:text-foreground">
+            <button onClick={() => setSearchOpen(false)} className="p-1 text-muted-foreground hover:text-foreground" aria-label="Fermer la recherche">
               <X size={16} />
             </button>
           </div>

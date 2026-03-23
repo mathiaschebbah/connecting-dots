@@ -292,14 +292,13 @@ impl Database {
 
     pub fn tweets_without_ai_metadata(&self, limit: u32) -> Result<Vec<(String, String)>> {
         let conn = self.conn.lock().unwrap();
-        // Skip link-only tweets that haven't been resolved yet — they'll produce garbage enrichments.
-        // A tweet is "link-only" if content < 200 chars AND contains a URL AND has no resolved_content.
+        // Skip ANY tweet with an unresolved link — wait for the link resolver to fetch the real content first.
+        // This prevents garbage categorizations like "article-x", "long-form-article", etc.
         let mut stmt = conn.prepare(
             "SELECT id, COALESCE(resolved_content, content) FROM tweets
              WHERE ai_enriched_at IS NULL
              AND NOT (
                 resolved_content IS NULL
-                AND length(content) < 200
                 AND (content LIKE '%x.com/%/status/%' OR content LIKE '%twitter.com/%/status/%' OR content LIKE '%x.com/i/article/%' OR content LIKE '%t.co/%')
              )
              ORDER BY CASE WHEN source = 'bookmark' THEN 0 ELSE 1 END
@@ -331,11 +330,8 @@ impl Database {
     pub fn store_resolved_content(&self, tweet_id: &str, content: &str, author: Option<&str>, url: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("UPDATE tweets SET resolved_content = ?1, resolved_author = ?2, resolved_url = ?3 WHERE id = ?4", rusqlite::params![content, author, url, tweet_id])?;
-        conn.execute(
-            "UPDATE tweets SET embedding = NULL, ai_enriched_at = NULL, ai_category = NULL, ai_cluster = NULL, ai_summary = NULL, ai_topics = NULL, ai_type = NULL
-             WHERE id = ?1 AND (ai_category IS NULL OR (ai_category = 'other' AND ai_cluster = 'unknown'))",
-            rusqlite::params![tweet_id],
-        )?;
+        // Clear embedding so it gets re-embedded with the resolved content
+        conn.execute("UPDATE tweets SET embedding = NULL WHERE id = ?1 AND embedding IS NOT NULL", rusqlite::params![tweet_id])?;
         Ok(())
     }
 
@@ -406,13 +402,23 @@ impl Database {
 
     // ── Dots ──
 
+    /// Get existing dot slugs for the enricher prompt (lightweight, no counts)
+    pub fn list_dot_slugs(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT slug, name FROM dots ORDER BY slug")?;
+        let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        let mut results = Vec::new();
+        for row in rows { results.push(row?); }
+        Ok(results)
+    }
+
     pub fn list_dots(&self) -> Result<Vec<Dot>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT d.id, d.name, d.slug, d.parent_id, d.description, d.color, d.created_at,
                     (SELECT COUNT(*) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id WHERE td.dot_id = d.id AND t.source = 'bookmark') as bookmark_count
              FROM dots d WHERE d.parent_id IS NULL
-             AND d.slug NOT IN ('unknown', 'other', 'article-link', 'unknown-article', 'twitter-article', 'meme-content', 'pop-culture-humor')
+             AND d.slug NOT IN ('unknown', 'other', 'article-link', 'unknown-article', 'twitter-article', 'meme-content', 'pop-culture-humor', 'article-x', 'articles-x', 'x-article', 'x-articles', 'long-form-article', 'misc', 'unspecified', 'unlabeled', 'tweet-indisponible', 'contenu-viral', 'general')
              AND (SELECT COUNT(*) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id WHERE td.dot_id = d.id AND t.source = 'bookmark') >= 2
              ORDER BY (SELECT MAX(t.created_at) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id WHERE td.dot_id = d.id AND t.source = 'bookmark') DESC"
         )?;
@@ -483,7 +489,13 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let existing: Result<i64, _> = conn.query_row("SELECT id FROM dots WHERE slug = ?1", rusqlite::params![slug], |row| row.get(0));
         match existing {
-            Ok(id) => Ok(id),
+            Ok(id) => {
+                // Update name if the new one looks better (has mixed case = LLM-provided)
+                if name.chars().any(|c| c.is_uppercase()) && name.chars().any(|c| c.is_lowercase()) {
+                    conn.execute("UPDATE dots SET name = ?1 WHERE slug = ?2", rusqlite::params![name, slug])?;
+                }
+                Ok(id)
+            }
             Err(rusqlite::Error::QueryReturnedNoRows) => {
                 let now = chrono::Utc::now().to_rfc3339();
                 conn.execute("INSERT INTO dots (name, slug, color, created_at) VALUES (?1, ?2, ?3, ?4)", rusqlite::params![name, slug, color, now])?;

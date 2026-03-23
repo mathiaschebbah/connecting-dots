@@ -122,88 +122,104 @@ async fn resolve_batch(db: &Database) -> anyhow::Result<u32> {
         return Ok(0);
     }
 
-    let clix = Clix::new();
-    let mut count = 0u32;
-
+    // Phase 1: Resolve all t.co redirects in parallel
+    let mut url_futures = Vec::new();
     for (tweet_id, content) in &pending {
-        // Step 1: Determine the actual URL (resolve t.co if needed)
-        let resolved_url = if let Some(tco_url) = extract_tco_url(content) {
-            match resolve_tco_redirect(&tco_url).await {
-                Some(final_url) => {
-                    log::info!("[resolver] t.co {} -> {}", tco_url, final_url);
-                    final_url
-                }
-                None => {
-                    log::warn!("[resolver] Failed to follow t.co redirect: {}", tco_url);
-                    db.store_resolved_content(tweet_id, "[failed to resolve]", None, &tco_url)?;
-                    continue;
-                }
-            }
-        } else {
-            content.clone()
-        };
+        let tid = tweet_id.clone();
+        let c = content.clone();
+        url_futures.push(async move {
+            let resolved = if let Some(tco_url) = extract_tco_url(&c) {
+                resolve_tco_redirect(&tco_url).await.unwrap_or(c)
+            } else {
+                c
+            };
+            (tid, resolved)
+        });
+    }
+    let resolved_urls: Vec<(String, String)> = futures::future::join_all(url_futures).await;
 
-        // Step 2: Try to fetch via clix tweet_detail (works for tweets AND articles)
-        // First, try the tweet_id itself — it might have an article attached
-        let detail_id = extract_tweet_id(&resolved_url).unwrap_or_else(|| tweet_id.clone());
-        let detail_id_log = detail_id.clone();
+    // Phase 2: Fetch content in parallel (max 5 concurrent via semaphore)
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(5));
+    let clix = Clix::new();
+
+    let mut handles = Vec::new();
+    for (tweet_id, resolved_url) in resolved_urls {
+        let sem = semaphore.clone();
         let clix_clone = clix.clone_command();
+        let url = resolved_url.clone();
+        let tid = tweet_id.clone();
 
-        match tokio::task::spawn_blocking(move || clix_clone.tweet_detail(&detail_id)).await {
-            Ok(Ok(detail)) => {
-                let mut resolved_text = detail.tweet.text.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
+            resolve_one(clix_clone, tid, url).await
+        }));
+    }
 
-                // If the tweet has an article, append the full article content
-                if let Some(article) = &detail.article {
-                    if let Some(title) = &article.title {
-                        resolved_text.push_str(&format!("\n\n--- {} ---\n", title));
-                    }
-                    if let Some(md) = &article.markdown {
-                        resolved_text.push_str(md);
-                    }
+    let mut count = 0u32;
+    let results: Vec<_> = futures::future::join_all(handles).await;
+    for result in results {
+        match result {
+            Ok(Ok(Some((tweet_id, resolved_text, author, url, upsert_tweet)))) => {
+                db.store_resolved_content(&tweet_id, &resolved_text, author.as_deref(), &url)?;
+                if let Some(tweet) = upsert_tweet {
+                    let _ = db.upsert_tweets(&[tweet], "resolved");
                 }
-
-                let author = &detail.tweet.author_handle;
-                let url = detail.tweet.tweet_url.clone().unwrap_or_else(|| {
-                    format!("https://x.com/{}/status/{}", author, detail_id_log)
-                });
-                db.store_resolved_content(tweet_id, &resolved_text, Some(author), &url)?;
-                let _ = db.upsert_tweets(&[detail.tweet], "resolved");
-                count += 1;
-                continue;
-            }
-            Ok(Err(e)) => {
-                log::warn!("[resolver] clix failed for {}: {}", detail_id_log, e);
-            }
-            Err(e) => {
-                log::warn!("[resolver] task failed for {}: {}", detail_id_log, e);
-            }
-        }
-
-        // Step 3: Fallback — try HTTP scraping for articles or page titles
-        if extract_article_id(&resolved_url).is_some() {
-            if let Some((title, body)) = fetch_x_article(&resolved_url).await {
-                let text = if body.is_empty() { format!("{}\n\n{}", title, resolved_url) } else { format!("{}\n\n{}", title, body) };
-                db.store_resolved_content(tweet_id, &text, None, &resolved_url)?;
-                count += 1;
-                continue;
-            }
-        }
-
-        // Step 4: External URL — fetch title
-        match fetch_page_title(&resolved_url).await {
-            Some(title) => {
-                db.store_resolved_content(tweet_id, &format!("{}\n\n{}", title, resolved_url), None, &resolved_url)?;
                 count += 1;
             }
-            None => {
-                db.store_resolved_content(tweet_id, &resolved_url, None, &resolved_url)?;
-                count += 1;
-            }
+            Ok(Ok(None)) => {} // no result
+            Ok(Err(e)) => log::warn!("[resolver] error: {}", e),
+            Err(e) => log::warn!("[resolver] task panic: {}", e),
         }
     }
 
     Ok(count)
+}
+
+/// Resolve a single tweet link — runs inside a tokio task
+async fn resolve_one(
+    clix: Clix,
+    tweet_id: String,
+    resolved_url: String,
+) -> anyhow::Result<Option<(String, String, Option<String>, String, Option<crate::twitter::clix::ClixTweet>)>> {
+    // Try clix tweet_detail first
+    let detail_id = extract_tweet_id(&resolved_url).unwrap_or_else(|| tweet_id.clone());
+    let detail_id2 = detail_id.clone();
+
+    match tokio::task::spawn_blocking(move || clix.tweet_detail(&detail_id2)).await {
+        Ok(Ok(detail)) => {
+            let mut resolved_text = detail.tweet.text.clone();
+            if let Some(article) = &detail.article {
+                if let Some(title) = &article.title {
+                    resolved_text.push_str(&format!("\n\n--- {} ---\n", title));
+                }
+                if let Some(md) = &article.markdown {
+                    resolved_text.push_str(md);
+                }
+            }
+            let author = detail.tweet.author_handle.clone();
+            let url = detail.tweet.tweet_url.clone().unwrap_or_else(|| {
+                format!("https://x.com/{}/status/{}", author, detail_id)
+            });
+            return Ok(Some((tweet_id, resolved_text, Some(author), url, Some(detail.tweet))));
+        }
+        Ok(Err(e)) => log::warn!("[resolver] clix failed for {}: {}", detail_id, e),
+        Err(e) => log::warn!("[resolver] task failed for {}: {}", detail_id, e),
+    }
+
+    // Fallback: HTTP scraping
+    if extract_article_id(&resolved_url).is_some() {
+        if let Some((title, body)) = fetch_x_article(&resolved_url).await {
+            let text = if body.is_empty() { format!("{}\n\n{}", title, resolved_url) } else { format!("{}\n\n{}", title, body) };
+            return Ok(Some((tweet_id, text, None, resolved_url, None)));
+        }
+    }
+
+    // External URL
+    if let Some(title) = fetch_page_title(&resolved_url).await {
+        return Ok(Some((tweet_id, format!("{}\n\n{}", title, resolved_url), None, resolved_url, None)));
+    }
+
+    Ok(Some((tweet_id, resolved_url.clone(), None, resolved_url, None)))
 }
 
 /// Fetch page title from an external URL
