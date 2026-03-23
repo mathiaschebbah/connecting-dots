@@ -17,9 +17,15 @@ pub enum AgentEvent {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "tool_start")]
-    ToolStart { tool: String, input: serde_json::Value },
+    ToolStart {
+        tool: String,
+        input: serde_json::Value,
+    },
     #[serde(rename = "tool_result")]
-    ToolResult { tool: String, result: serde_json::Value },
+    ToolResult {
+        tool: String,
+        result: serde_json::Value,
+    },
     #[serde(rename = "done")]
     Done,
     #[serde(rename = "error")]
@@ -54,9 +60,12 @@ pub async fn run_agent(
     history: Vec<ChatMessage>,
     event_tx: tokio::sync::mpsc::Sender<AgentEvent>,
 ) {
-    if let Err(e) = run_agent_inner(db, embedder, api_key, user_message, history, &event_tx).await
-    {
-        let _ = event_tx.send(AgentEvent::Error { message: e.to_string() }).await;
+    if let Err(e) = run_agent_inner(db, embedder, api_key, user_message, history, &event_tx).await {
+        let _ = event_tx
+            .send(AgentEvent::Error {
+                message: e.to_string(),
+            })
+            .await;
     }
     let _ = event_tx.send(AgentEvent::Done).await;
 }
@@ -250,9 +259,13 @@ async fn execute_tool(
             match embedder.embed_one(query) {
                 Ok(embedding) => match db.search_semantic(&embedding, 100) {
                     Ok(tweets) => {
-                        let bookmarks: Vec<_> = tweets.into_iter().filter(|t| t.source == "bookmark").take(30).collect();
+                        let bookmarks: Vec<_> = tweets
+                            .into_iter()
+                            .filter(|t| t.source == "bookmark")
+                            .take(30)
+                            .collect();
                         serde_json::to_value(&bookmarks).unwrap_or_default()
-                    },
+                    }
                     Err(e) => serde_json::json!({"error": e.to_string()}),
                 },
                 Err(e) => serde_json::json!({"error": e.to_string()}),
@@ -298,17 +311,16 @@ async fn execute_tool(
                 Err(e) => serde_json::json!({"error": e.to_string()}),
             }
         }
-        "list_dots" => {
-            match db.list_dot_slugs() {
-                Ok(dots) => {
-                    let list: Vec<serde_json::Value> = dots.iter().map(|(slug, name)| {
-                        serde_json::json!({"slug": slug, "name": name})
-                    }).collect();
-                    serde_json::json!({"dots": list, "count": list.len()})
-                }
-                Err(e) => serde_json::json!({"error": e.to_string()}),
+        "list_dots" => match db.list_dot_slugs() {
+            Ok(dots) => {
+                let list: Vec<serde_json::Value> = dots
+                    .iter()
+                    .map(|(slug, name)| serde_json::json!({"slug": slug, "name": name}))
+                    .collect();
+                serde_json::json!({"dots": list, "count": list.len()})
             }
-        }
+            Err(e) => serde_json::json!({"error": e.to_string()}),
+        },
         "get_tweet_info" => {
             let tweet_id = input["tweet_id"].as_str().unwrap_or("");
             match db.get_tweet_full(tweet_id) {
@@ -332,10 +344,7 @@ fn condense_for_llm(result: &serde_json::Value) -> String {
             .enumerate()
             .map(|(i, t)| {
                 let handle = t["author_handle"].as_str().unwrap_or("?");
-                let content = t["content"]
-                    .as_str()
-                    .or(t["text"].as_str())
-                    .unwrap_or("");
+                let content = t["content"].as_str().or(t["text"].as_str()).unwrap_or("");
                 let short = &content[..content.len().min(120)];
                 let id = t["id"].as_str().unwrap_or("");
                 format!("{}. @{} (id:{}): {}", i + 1, handle, id, short)

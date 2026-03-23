@@ -44,7 +44,8 @@ fn extract_article_id(url: &str) -> Option<String> {
 /// Check if content contains a t.co shortlink
 fn extract_tco_url(content: &str) -> Option<String> {
     for word in content.split_whitespace() {
-        let trimmed = word.trim_matches(|c: char| !c.is_alphanumeric() && c != ':' && c != '/' && c != '.');
+        let trimmed =
+            word.trim_matches(|c: char| !c.is_alphanumeric() && c != ':' && c != '/' && c != '.');
         if trimmed.contains("t.co/") {
             let url = if trimmed.starts_with("http") {
                 trimmed.to_string()
@@ -82,18 +83,24 @@ async fn resolve_tco_redirect(url: &str) -> Option<String> {
 }
 
 pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) {
-    log::info!("Worker started: link resolver every {}s", RESOLVE_INTERVAL_SECS);
+    log::info!(
+        "Worker started: link resolver every {}s",
+        RESOLVE_INTERVAL_SECS
+    );
 
     let mut backoff_secs = RESOLVE_INTERVAL_SECS;
 
     loop {
         sleep(Duration::from_secs(backoff_secs)).await;
 
-        let _ = app_handle.emit("sync:event", SyncEvent {
-            worker: "resolver".to_string(),
-            status: "start".to_string(),
-            detail: None,
-        });
+        let _ = app_handle.emit(
+            "sync:event",
+            SyncEvent {
+                worker: "resolver".to_string(),
+                status: "start".to_string(),
+                detail: None,
+            },
+        );
 
         match resolve_batch(&db).await {
             Ok(count) => {
@@ -101,11 +108,18 @@ pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) 
                 if count > 0 {
                     log::info!("[resolver] resolved {} tweet links", count);
                 }
-                let _ = app_handle.emit("sync:event", SyncEvent {
-                    worker: "resolver".to_string(),
-                    status: "done".to_string(),
-                    detail: if count > 0 { Some(format!("+{} resolved", count)) } else { None },
-                });
+                let _ = app_handle.emit(
+                    "sync:event",
+                    SyncEvent {
+                        worker: "resolver".to_string(),
+                        status: "done".to_string(),
+                        detail: if count > 0 {
+                            Some(format!("+{} resolved", count))
+                        } else {
+                            None
+                        },
+                    },
+                );
             }
             Err(e) => {
                 let err_str = e.to_string();
@@ -115,11 +129,14 @@ pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) 
                 } else {
                     log::error!("[resolver] error: {}", e);
                 }
-                let _ = app_handle.emit("sync:event", SyncEvent {
-                    worker: "resolver".to_string(),
-                    status: "done".to_string(),
-                    detail: Some(format!("backoff: {}s", backoff_secs)),
-                });
+                let _ = app_handle.emit(
+                    "sync:event",
+                    SyncEvent {
+                        worker: "resolver".to_string(),
+                        status: "done".to_string(),
+                        detail: Some(format!("backoff: {}s", backoff_secs)),
+                    },
+                );
             }
         }
     }
@@ -189,7 +206,15 @@ async fn resolve_one(
     clix: Clix,
     tweet_id: String,
     resolved_url: String,
-) -> anyhow::Result<Option<(String, String, Option<String>, String, Option<crate::twitter::clix::ClixTweet>)>> {
+) -> anyhow::Result<
+    Option<(
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<crate::twitter::clix::ClixTweet>,
+    )>,
+> {
     // Try clix tweet_detail first
     let detail_id = extract_tweet_id(&resolved_url).unwrap_or_else(|| tweet_id.clone());
     let detail_id2 = detail_id.clone();
@@ -206,10 +231,18 @@ async fn resolve_one(
                 }
             }
             let author = detail.tweet.author_handle.clone();
-            let url = detail.tweet.tweet_url.clone().unwrap_or_else(|| {
-                format!("https://x.com/{}/status/{}", author, detail_id)
-            });
-            return Ok(Some((tweet_id, resolved_text, Some(author), url, Some(detail.tweet))));
+            let url = detail
+                .tweet
+                .tweet_url
+                .clone()
+                .unwrap_or_else(|| format!("https://x.com/{}/status/{}", author, detail_id));
+            return Ok(Some((
+                tweet_id,
+                resolved_text,
+                Some(author),
+                url,
+                Some(detail.tweet),
+            )));
         }
         Ok(Err(e)) => log::warn!("[resolver] clix failed for {}: {}", detail_id, e),
         Err(e) => log::warn!("[resolver] task failed for {}: {}", detail_id, e),
@@ -218,17 +251,33 @@ async fn resolve_one(
     // Fallback: HTTP scraping
     if extract_article_id(&resolved_url).is_some() {
         if let Some((title, body)) = fetch_x_article(&resolved_url).await {
-            let text = if body.is_empty() { format!("{}\n\n{}", title, resolved_url) } else { format!("{}\n\n{}", title, body) };
+            let text = if body.is_empty() {
+                format!("{}\n\n{}", title, resolved_url)
+            } else {
+                format!("{}\n\n{}", title, body)
+            };
             return Ok(Some((tweet_id, text, None, resolved_url, None)));
         }
     }
 
     // External URL
     if let Some(title) = fetch_page_title(&resolved_url).await {
-        return Ok(Some((tweet_id, format!("{}\n\n{}", title, resolved_url), None, resolved_url, None)));
+        return Ok(Some((
+            tweet_id,
+            format!("{}\n\n{}", title, resolved_url),
+            None,
+            resolved_url,
+            None,
+        )));
     }
 
-    Ok(Some((tweet_id, resolved_url.clone(), None, resolved_url, None)))
+    Ok(Some((
+        tweet_id,
+        resolved_url.clone(),
+        None,
+        resolved_url,
+        None,
+    )))
 }
 
 /// Fetch page title from an external URL
@@ -238,9 +287,12 @@ async fn fetch_page_title(url: &str) -> Option<String> {
         .build()
         .ok()?;
 
-    let resp = client.get(url)
+    let resp = client
+        .get(url)
         .header("User-Agent", "Mozilla/5.0 (compatible; ConnectingDots/1.0)")
-        .send().await.ok()?;
+        .send()
+        .await
+        .ok()?;
 
     if !resp.status().is_success() {
         return None;
@@ -302,13 +354,11 @@ async fn fetch_x_article(url: &str) -> Option<(String, String)> {
         .unwrap_or_else(|| "Article X".to_string());
 
     // Extract article body from og:description or article content
-    let description = extract_meta_content(&body, "og:description")
-        .unwrap_or_default();
+    let description = extract_meta_content(&body, "og:description").unwrap_or_default();
 
     // Try to extract article text from the page body
     // X articles have their content in data attributes or script tags
-    let article_text = extract_article_text(&body)
-        .unwrap_or(description);
+    let article_text = extract_article_text(&body).unwrap_or(description);
 
     Some((html_decode(&title), html_decode(&article_text)))
 }

@@ -13,6 +13,19 @@ interface MonitoredTopic {
   is_active: boolean;
 }
 
+interface ConfusionPair {
+  from_slug: string;
+  to_slug: string;
+  count: number;
+}
+
+interface DashboardStats {
+  correction_rate_7d: number;
+  active_patterns: number;
+  total_corrections: number;
+  confusion_pairs: ConfusionPair[];
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -25,6 +38,7 @@ export function SettingsModal({ open, onClose }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [topics, setTopics] = useState<MonitoredTopic[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
 
   const loadTopics = () => {
     invoke<MonitoredTopic[]>("list_monitored_topics").then(setTopics).catch(() => { /* silently fail */ });
@@ -34,6 +48,7 @@ export function SettingsModal({ open, onClose }: Props) {
     if (open) {
       invoke<boolean>("check_api_key").then(setHasKey).catch(() => setHasKey(false));
       loadTopics();
+      invoke<DashboardStats>("get_dashboard_stats").then(setStats).catch(() => setStats(null));
     }
   }, [open]);
 
@@ -157,6 +172,47 @@ export function SettingsModal({ open, onClose }: Props) {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {stats && (
+              <div className="space-y-3">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Apprentissage continu</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-border bg-secondary p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Taux 7j</div>
+                    <div className="mt-1 text-[18px] font-semibold text-foreground">
+                      {(stats.correction_rate_7d * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-secondary p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Patterns</div>
+                    <div className="mt-1 text-[18px] font-semibold text-foreground">
+                      {stats.active_patterns}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-secondary p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Corrections</div>
+                    <div className="mt-1 text-[18px] font-semibold text-foreground">
+                      {stats.total_corrections}
+                    </div>
+                  </div>
+                </div>
+                {stats.confusion_pairs.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Paires les plus confondues
+                    </div>
+                    {stats.confusion_pairs.slice(0, 3).map((pair) => (
+                      <div key={`${pair.from_slug}:${pair.to_slug}`} className="flex items-center justify-between rounded-xl border border-border bg-secondary px-3 py-2 text-[12px]">
+                        <span className="text-foreground/85">
+                          {pair.from_slug} → {pair.to_slug}
+                        </span>
+                        <span className="tabular-nums text-muted-foreground">{pair.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

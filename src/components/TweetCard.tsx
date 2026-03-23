@@ -1,5 +1,7 @@
-import { Heart, Repeat2, MessageCircle, BarChart2 } from "lucide-react";
+import { useState } from "react";
+import { Heart, Repeat2, MessageCircle, BarChart2, FolderOutput, Loader2 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { DotPicker } from "./DotPicker";
 
 interface Tweet {
   id: string;
@@ -20,6 +22,12 @@ interface Tweet {
   ai_topics?: string[];
   has_media?: boolean;
   author_avatar?: string | null;
+}
+
+interface MoveAction {
+  currentDotSlug?: string | null;
+  onMove: (toSlug: string, reason?: string) => Promise<void> | void;
+  busy?: boolean;
 }
 
 function fmt(n: number): string {
@@ -85,7 +93,18 @@ function Avatar({ handle, avatarUrl }: { handle: string; avatarUrl?: string | nu
   );
 }
 
-export function TweetCard({ tweet, compact, hideTags }: { tweet: Tweet; compact?: boolean; hideTags?: boolean }) {
+export function TweetCard({
+  tweet,
+  compact,
+  hideTags,
+  moveAction,
+}: {
+  tweet: Tweet;
+  compact?: boolean;
+  hideTags?: boolean;
+  moveAction?: MoveAction;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   const hasSummary = !isUselessSummary(tweet.ai_summary);
   const linkOnly = isLinkOnly(tweet.content);
 
@@ -101,18 +120,53 @@ export function TweetCard({ tweet, compact, hideTags }: { tweet: Tweet; compact?
 
       {/* Content column */}
       <div className="flex-1 min-w-0">
-        {/* Name · @handle · time — single line like X */}
-        <div className="flex items-center gap-1 leading-5">
-          <span className="text-[15px] font-bold text-foreground truncate">
-            {tweet.author_name || tweet.author_handle}
-          </span>
-          <span className="text-[15px] text-muted-foreground truncate">
-            @{tweet.author_handle}
-          </span>
-          <span className="text-muted-foreground shrink-0">·</span>
-          <span className="text-[15px] text-muted-foreground shrink-0 whitespace-nowrap">
-            {timeAgo(tweet.created_at)}
-          </span>
+        <div className="flex items-start gap-2">
+          {/* Name · @handle · time — single line like X */}
+          <div className="flex min-w-0 flex-1 items-center gap-1 leading-5">
+            <span className="text-[15px] font-bold text-foreground truncate">
+              {tweet.author_name || tweet.author_handle}
+            </span>
+            <span className="text-[15px] text-muted-foreground truncate">
+              @{tweet.author_handle}
+            </span>
+            <span className="text-muted-foreground shrink-0">·</span>
+            <span className="text-[15px] text-muted-foreground shrink-0 whitespace-nowrap">
+              {timeAgo(tweet.created_at)}
+            </span>
+          </div>
+
+          {moveAction && (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPickerOpen((open) => !open);
+                }}
+                className={cn(
+                  "rounded-full p-2 text-muted-foreground transition-all hover:bg-white/[0.08] hover:text-foreground",
+                  pickerOpen
+                    ? "opacity-100"
+                    : "opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100"
+                )}
+                aria-label="Déplacer vers un autre dot"
+              >
+                {moveAction.busy ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <FolderOutput size={15} />
+                )}
+              </button>
+              <DotPicker
+                open={pickerOpen}
+                onClose={() => setPickerOpen(false)}
+                excludeSlug={moveAction.currentDotSlug}
+                onSelect={async (dot, reason) => {
+                  await moveAction.onMove(dot.slug, reason || undefined);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* AI Summary — subtle, not competing with content */}

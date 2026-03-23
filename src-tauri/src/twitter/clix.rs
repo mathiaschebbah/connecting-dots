@@ -53,7 +53,6 @@ pub struct ClixArticle {
     pub markdown: Option<String>,
 }
 
-
 pub struct Clix {
     command: String,
     args_prefix: Vec<String>,
@@ -100,8 +99,8 @@ impl Clix {
             anyhow::bail!("clix failed: {}", stderr);
         }
 
-        let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .context("Failed to parse clix JSON output")?;
+        let json: serde_json::Value =
+            serde_json::from_slice(&output.stdout).context("Failed to parse clix JSON output")?;
 
         Ok(json)
     }
@@ -126,23 +125,35 @@ impl Clix {
 
         if let Some(arr) = raw.as_array() {
             // It's a thread array — find the tweet matching our ID
-            let tweet = arr.iter()
+            let tweet = arr
+                .iter()
                 .find_map(|v| {
                     let t: ClixTweet = serde_json::from_value(v.clone()).ok()?;
-                    if t.id == tweet_id { Some(t) } else { None }
+                    if t.id == tweet_id {
+                        Some(t)
+                    } else {
+                        None
+                    }
                 })
                 .or_else(|| {
                     // Fallback: take the first tweet
-                    arr.first().and_then(|v| serde_json::from_value(v.clone()).ok())
+                    arr.first()
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
                 })
                 .ok_or_else(|| anyhow::anyhow!("Empty response from clix"))?;
-            Ok(ClixTweetDetail { tweet, article: None })
+            Ok(ClixTweetDetail {
+                tweet,
+                article: None,
+            })
         } else if let Ok(detail) = serde_json::from_value::<ClixTweetDetail>(raw.clone()) {
             Ok(detail)
         } else {
             // Single tweet object
             let tweet: ClixTweet = serde_json::from_value(raw)?;
-            Ok(ClixTweetDetail { tweet, article: None })
+            Ok(ClixTweetDetail {
+                tweet,
+                article: None,
+            })
         }
     }
 
@@ -159,5 +170,4 @@ impl Clix {
         let tweets: Vec<ClixTweet> = serde_json::from_value(raw)?;
         Ok(tweets)
     }
-
 }

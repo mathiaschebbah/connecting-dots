@@ -46,10 +46,7 @@ impl BookmarksFetcher {
             .collect::<Vec<_>>()
             .join("; ");
 
-        Ok(Self {
-            ct0,
-            cookies_str,
-        })
+        Ok(Self { ct0, cookies_str })
     }
 
     /// Fetch all bookmarks, paginating through all pages.
@@ -65,7 +62,11 @@ impl BookmarksFetcher {
             let (tweets, next_cursor) = self.fetch_page(&client, cursor.as_deref())?;
 
             if tweets.is_empty() {
-                log::info!("Bookmarks fetch complete (empty page): {} pages, {} unique tweets", page, all_tweets.len());
+                log::info!(
+                    "Bookmarks fetch complete (empty page): {} pages, {} unique tweets",
+                    page,
+                    all_tweets.len()
+                );
                 break;
             }
 
@@ -77,13 +78,22 @@ impl BookmarksFetcher {
                 }
             }
 
-            log::info!("Bookmarks page {}: {} new, {} total", page + 1, new_count, all_tweets.len());
+            log::info!(
+                "Bookmarks page {}: {} new, {} total",
+                page + 1,
+                new_count,
+                all_tweets.len()
+            );
 
             // Only stop if we get multiple consecutive pages with no new tweets
             if new_count == 0 {
                 consecutive_empty += 1;
                 if consecutive_empty >= 2 {
-                    log::info!("Bookmarks fetch complete (no new tweets): {} pages, {} unique tweets", page + 1, all_tweets.len());
+                    log::info!(
+                        "Bookmarks fetch complete (no new tweets): {} pages, {} unique tweets",
+                        page + 1,
+                        all_tweets.len()
+                    );
                     break;
                 }
             } else {
@@ -93,7 +103,11 @@ impl BookmarksFetcher {
             match next_cursor {
                 Some(c) => cursor = Some(c),
                 None => {
-                    log::info!("Bookmarks fetch complete (no more cursor): {} pages, {} unique tweets", page + 1, all_tweets.len());
+                    log::info!(
+                        "Bookmarks fetch complete (no more cursor): {} pages, {} unique tweets",
+                        page + 1,
+                        all_tweets.len()
+                    );
                     break;
                 }
             }
@@ -163,7 +177,11 @@ impl BookmarksFetcher {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().unwrap_or_default();
-            anyhow::bail!("Twitter GraphQL error {}: {}", status, &text[..text.len().min(200)]);
+            anyhow::bail!(
+                "Twitter GraphQL error {}: {}",
+                status,
+                &text[..text.len().min(200)]
+            );
         }
 
         let data: Value = response.json()?;
@@ -214,9 +232,7 @@ fn parse_bookmarks_response(data: &Value) -> Result<(Vec<ClixTweet>, Option<Stri
 
         // Cursor entries
         if entry_id.starts_with("cursor-bottom") {
-            next_cursor = entry["content"]["value"]
-                .as_str()
-                .map(String::from);
+            next_cursor = entry["content"]["value"].as_str().map(String::from);
             continue;
         }
 
@@ -232,8 +248,7 @@ fn parse_bookmarks_response(data: &Value) -> Result<(Vec<ClixTweet>, Option<Stri
 }
 
 fn parse_tweet_result(entry: &Value) -> Option<ClixTweet> {
-    let result = entry
-        .pointer("/content/itemContent/tweet_results/result")?;
+    let result = entry.pointer("/content/itemContent/tweet_results/result")?;
 
     // Handle tombstone / unavailable tweets
     let tweet_data = if result.get("tweet").is_some() {
@@ -269,14 +284,9 @@ fn parse_tweet_result(entry: &Value) -> Option<ClixTweet> {
             .and_then(|s| s.parse().ok()),
     });
 
-    let conversation_id = legacy["conversation_id_str"]
-        .as_str()
-        .map(String::from);
+    let conversation_id = legacy["conversation_id_str"].as_str().map(String::from);
 
-    let tweet_url = Some(format!(
-        "https://x.com/{}/status/{}",
-        author_handle, id
-    ));
+    let tweet_url = Some(format!("https://x.com/{}/status/{}", author_handle, id));
 
     Some(ClixTweet {
         id,
@@ -292,9 +302,7 @@ fn parse_tweet_result(entry: &Value) -> Option<ClixTweet> {
         reply_to_id: legacy["in_reply_to_status_id_str"]
             .as_str()
             .map(String::from),
-        reply_to_handle: legacy["in_reply_to_screen_name"]
-            .as_str()
-            .map(String::from),
+        reply_to_handle: legacy["in_reply_to_screen_name"].as_str().map(String::from),
         conversation_id,
         language: legacy["lang"].as_str().map(String::from),
         source: None,

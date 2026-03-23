@@ -11,35 +11,54 @@ pub struct PollConfig {
     pub interval_secs: u64,
 }
 
-pub async fn poll_loop_with_events(db: Arc<Database>, embedder: Arc<Embedder>, config: PollConfig, app_handle: AppHandle) {
-    log::info!("Worker started: poll bookmarks every {}s", config.interval_secs);
+pub async fn poll_loop_with_events(
+    db: Arc<Database>,
+    embedder: Arc<Embedder>,
+    config: PollConfig,
+    app_handle: AppHandle,
+) {
+    log::info!(
+        "Worker started: poll bookmarks every {}s",
+        config.interval_secs
+    );
 
     loop {
-        let _ = app_handle.emit("sync:event", SyncEvent {
-            worker: "bookmarks".to_string(),
-            status: "start".to_string(),
-            detail: None,
-        });
+        let _ = app_handle.emit(
+            "sync:event",
+            SyncEvent {
+                worker: "bookmarks".to_string(),
+                status: "start".to_string(),
+                detail: None,
+            },
+        );
 
         match poll_bookmarks(&db, &embedder).await {
             Ok((new, embedded)) => {
                 let detail = if new > 0 {
                     log::info!("[bookmarks] +{} tweets, {} embedded", new, embedded);
                     Some(format!("+{} signets", new))
-                } else { None };
-                let _ = app_handle.emit("sync:event", SyncEvent {
-                    worker: "bookmarks".to_string(),
-                    status: "done".to_string(),
-                    detail,
-                });
+                } else {
+                    None
+                };
+                let _ = app_handle.emit(
+                    "sync:event",
+                    SyncEvent {
+                        worker: "bookmarks".to_string(),
+                        status: "done".to_string(),
+                        detail,
+                    },
+                );
             }
             Err(e) => {
                 log::error!("[bookmarks] poll error: {}", e);
-                let _ = app_handle.emit("sync:event", SyncEvent {
-                    worker: "bookmarks".to_string(),
-                    status: "done".to_string(),
-                    detail: Some(format!("error: {}", e)),
-                });
+                let _ = app_handle.emit(
+                    "sync:event",
+                    SyncEvent {
+                        worker: "bookmarks".to_string(),
+                        status: "done".to_string(),
+                        detail: Some(format!("error: {}", e)),
+                    },
+                );
             }
         }
 
@@ -51,7 +70,8 @@ async fn poll_bookmarks(db: &Database, embedder: &Embedder) -> anyhow::Result<(u
     let tweets = tokio::task::spawn_blocking(|| {
         let fetcher = BookmarksFetcher::from_clix_config()?;
         fetcher.fetch_all(50)
-    }).await??;
+    })
+    .await??;
 
     let new_count = db.upsert_tweets(&tweets, "bookmark")?;
 

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Search } from "lucide-react";
+import { Loader2, Plus, Search } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 
 interface Dot {
@@ -18,20 +18,55 @@ interface Dot {
   children: Dot[];
 }
 
-function DotCard({ dot, highlight, onClick }: { dot: Dot; highlight?: boolean; onClick: () => void }) {
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function DotCard({
+  dot,
+  highlight,
+  onClick,
+}: {
+  dot: Dot;
+  highlight?: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
-      className="text-left w-full border border-border rounded-xl px-4 py-3.5 cursor-pointer transition-all duration-150 ease-out hover:bg-white/[0.03] active:scale-[0.97]"
+      className="w-full cursor-pointer rounded-2xl border border-border px-4 py-3.5 text-left transition-all duration-150 ease-out hover:bg-white/[0.03] active:scale-[0.97]"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[14px] font-bold text-foreground truncate leading-tight">
+        <span className="truncate text-[14px] font-bold leading-tight text-foreground">
           {dot.name}
         </span>
-        <span className={`text-[13px] tabular-nums shrink-0 transition-colors duration-150 ${highlight ? "text-[#1d9bf0]" : "text-muted-foreground"}`}>
+        <span
+          className={`shrink-0 text-[13px] tabular-nums transition-colors duration-150 ${highlight ? "text-[#1d9bf0]" : "text-muted-foreground"}`}
+        >
           {dot.bookmark_count}
         </span>
       </div>
+      <div className="mt-1 truncate text-[12px] text-muted-foreground">{dot.slug}</div>
+    </button>
+  );
+}
+
+function CreateDotCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex min-h-[96px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-secondary/50 text-muted-foreground transition-all duration-150 hover:border-[#1d9bf0]/50 hover:text-foreground"
+    >
+      <div className="rounded-full border border-border p-2">
+        <Plus size={16} />
+      </div>
+      <span className="text-[13px] font-medium">Créer un dot</span>
     </button>
   );
 }
@@ -43,6 +78,12 @@ export function DotsGrid() {
   const [backfilling, setBackfilling] = useState(false);
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createSlug, setCreateSlug] = useState("");
+  const [createColor, setCreateColor] = useState("#1d9bf0");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const navigate = useAppStore((s) => s.navigate);
 
@@ -54,24 +95,37 @@ export function DotsGrid() {
         setBackfilling(true);
         try {
           const count = await invoke<number>("backfill_dots");
-          if (count > 0) setDots(await invoke<Dot[]>("list_dots"));
-        } catch {} finally { setBackfilling(false); }
+          if (count > 0) {
+            setDots(await invoke<Dot[]>("list_dots"));
+          }
+        } catch {
+          // noop
+        } finally {
+          setBackfilling(false);
+        }
       }
     } catch {
-      /* silently fail */
-    } finally { setLoading(false); }
+      // noop
+    } finally {
+      setLoading(false);
+    }
   }, [backfilling]);
 
-  useEffect(() => { loadDots(); }, []);
+  useEffect(() => {
+    loadDots();
+  }, [loadDots]);
 
   useEffect(() => {
     const unlisten = listen<{ worker: string; status: string }>("sync:event", (event) => {
-      if (event.payload.worker === "enricher" && event.payload.status === "done") loadDots();
+      if (event.payload.worker === "enricher" && event.payload.status === "done") {
+        loadDots();
+      }
     });
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [loadDots]);
 
-  // Debounced search: filter dot names locally + search tweet content via backend
   useEffect(() => {
     if (!search.trim()) {
       setSearchResults(null);
@@ -80,17 +134,16 @@ export function DotsGrid() {
 
     clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(async () => {
-      const q = search.toLowerCase();
+      const query = search.toLowerCase();
+      const nameMatches = dots.filter(
+        (dot) =>
+          dot.name.toLowerCase().includes(query) || dot.slug.includes(query)
+      );
 
-      // Local filter by dot name
-      const nameMatches = dots.filter((d) => d.name.toLowerCase().includes(q) || d.slug.includes(q));
-
-      // Backend search by tweet content
       setSearching(true);
       try {
         const contentMatches = await invoke<Dot[]>("search_dots", { query: search.trim() });
-        // Merge: name matches first, then content matches (deduplicated)
-        const seenIds = new Set(nameMatches.map((d) => d.id));
+        const seenIds = new Set(nameMatches.map((dot) => dot.id));
         const merged = [...nameMatches];
         for (const dot of contentMatches) {
           if (!seenIds.has(dot.id)) {
@@ -100,7 +153,6 @@ export function DotsGrid() {
         }
         setSearchResults(merged);
       } catch {
-        // Fallback to name-only
         setSearchResults(nameMatches);
       } finally {
         setSearching(false);
@@ -110,50 +162,208 @@ export function DotsGrid() {
     return () => clearTimeout(searchTimer.current);
   }, [search, dots]);
 
+  async function handleCreateDot(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextName = createName.trim();
+    const nextSlug = createSlug.trim();
+
+    if (!nextName || !nextSlug) {
+      setCreateError("Nom et slug requis");
+      return;
+    }
+
+    setCreating(true);
+    setCreateError(null);
+    try {
+      await invoke("create_dot", {
+        name: nextName,
+        slug: nextSlug,
+        color: createColor || null,
+      });
+      setCreateOpen(false);
+      setCreateName("");
+      setCreateSlug("");
+      await loadDots();
+      navigate({ type: "dot", slug: nextSlug });
+    } catch (error) {
+      setCreateError(String(error));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   const displayed = searchResults ?? dots;
 
   if (loading || backfilling) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="w-4 h-4 border-2 border-border border-t-foreground rounded-full animate-spin" />
+      <div className="flex flex-1 items-center justify-center">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="max-w-5xl mx-auto px-6 pt-4 pb-20 animate-fade-in-up">
-        {/* Search */}
-        <div className="relative max-w-sm mb-5 focus-within:max-w-md transition-all duration-300 ease-out">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <label htmlFor="search-dots" className="sr-only">Rechercher</label>
-          <input
-            id="search-dots"
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher dans les signets"
-            className="w-full pl-10 pr-3 py-2.5 bg-secondary rounded-full text-[15px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#1d9bf0] focus:bg-background transition-all"
-          />
-        </div>
-
-        {/* Results */}
-        {displayed.length === 0 ? (
-          <p className="text-center py-20 text-[15px] text-muted-foreground">
-            {searching ? "Recherche..." : dots.length === 0 ? "Tes signets sont en cours d'analyse" : "Aucun resultat"}
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {displayed.map((dot) => (
-              <DotCard
-                key={dot.id}
-                dot={dot}
-                highlight={searchResults !== null}
-                onClick={() => navigate({ type: "dot", slug: dot.slug })}
-              />
-            ))}
+    <>
+      <div className="flex flex-1 overflow-auto">
+        <div className="mx-auto max-w-5xl animate-fade-in-up px-6 pt-4 pb-20">
+          <div className="relative mb-5 max-w-sm transition-all duration-300 ease-out focus-within:max-w-md">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <label htmlFor="search-dots" className="sr-only">
+              Rechercher
+            </label>
+            <input
+              id="search-dots"
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Rechercher dans les signets"
+              className="w-full rounded-full bg-secondary py-2.5 pl-10 pr-3 text-[15px] text-foreground transition-all placeholder:text-muted-foreground focus:bg-background focus:outline-none focus:ring-1 focus:ring-[#1d9bf0]"
+            />
           </div>
-        )}
+
+          {dots.length === 0 && searchResults === null ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <CreateDotCard
+                onClick={() => {
+                  setCreateError(null);
+                  setCreateOpen(true);
+                }}
+              />
+            </div>
+          ) : displayed.length === 0 ? (
+            <p className="py-20 text-center text-[15px] text-muted-foreground">
+              {searching ? "Recherche..." : "Aucun resultat"}
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <CreateDotCard
+                onClick={() => {
+                  setCreateError(null);
+                  setCreateOpen(true);
+                }}
+              />
+              {displayed.map((dot) => (
+                <DotCard
+                  key={dot.id}
+                  dot={dot}
+                  highlight={searchResults !== null}
+                  onClick={() => navigate({ type: "dot", slug: dot.slug })}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <ActionModal
+        open={createOpen}
+        title="Créer un dot"
+        onClose={() => {
+          if (!creating) {
+            setCreateOpen(false);
+          }
+        }}
+      >
+        <form className="space-y-3" onSubmit={handleCreateDot}>
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-muted-foreground">Nom</label>
+            <input
+              type="text"
+              value={createName}
+              onChange={(event) => {
+                const nextName = event.target.value;
+                const currentSlugFromName = slugify(createName);
+                setCreateName(nextName);
+                if (!createSlug || createSlug === currentSlugFromName) {
+                  setCreateSlug(slugify(nextName));
+                }
+              }}
+              autoFocus
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none transition-colors focus:border-[#1d9bf0]"
+              placeholder="Nom du dot"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-muted-foreground">Slug</label>
+            <input
+              type="text"
+              value={createSlug}
+              onChange={(event) => setCreateSlug(slugify(event.target.value))}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none transition-colors focus:border-[#1d9bf0]"
+              placeholder="nouveau-dot"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-muted-foreground">Couleur</label>
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2">
+              <input
+                type="color"
+                value={createColor}
+                onChange={(event) => setCreateColor(event.target.value)}
+                className="h-8 w-10 rounded border-none bg-transparent p-0"
+              />
+              <span className="text-[13px] text-muted-foreground">{createColor}</span>
+            </div>
+          </div>
+
+          {createError && (
+            <p className="text-[12px] text-red-400">{createError}</p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="rounded-full border border-border px-4 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-white/[0.05]"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={creating}
+              className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {creating && <Loader2 size={14} className="animate-spin" />}
+              Créer
+            </button>
+          </div>
+        </form>
+      </ActionModal>
+    </>
+  );
+}
+
+function ActionModal({
+  open,
+  title,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-20 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <div
+        className="w-full max-w-md rounded-3xl border border-border bg-card p-5 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4">
+          <h2 className="text-[17px] font-semibold text-foreground">{title}</h2>
+        </div>
+        {children}
       </div>
     </div>
   );

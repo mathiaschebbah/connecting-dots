@@ -1,4 +1,4 @@
-use crate::db::Database;
+use crate::db::{CorrectionForPrompt, CorrectionPatternCandidate, CorrectionPromptKind, Database};
 use crate::workers::SyncEvent;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -10,21 +10,31 @@ const PARALLEL_BATCHES: usize = 3;
 const CONSOLIDATION_EVERY_N_CYCLES: u32 = 40; // consolidate dots every ~10 minutes
 
 pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_handle: AppHandle) {
-    log::info!("Worker started: AI enrichment every {}s ({} parallel batches of {})", ENRICH_INTERVAL_SECS, PARALLEL_BATCHES, BATCH_SIZE);
+    log::info!(
+        "Worker started: AI enrichment every {}s ({} parallel batches of {})",
+        ENRICH_INTERVAL_SECS,
+        PARALLEL_BATCHES,
+        BATCH_SIZE
+    );
 
     let client = reqwest::Client::new();
     let mut cycle_count = 0u32;
 
     loop {
-        let _ = app_handle.emit("sync:event", SyncEvent {
-            worker: "enricher".to_string(),
-            status: "start".to_string(),
-            detail: None,
-        });
+        let _ = app_handle.emit(
+            "sync:event",
+            SyncEvent {
+                worker: "enricher".to_string(),
+                status: "start".to_string(),
+                detail: None,
+            },
+        );
 
         // Fetch all pending tweets for this cycle
         let total_size = BATCH_SIZE * PARALLEL_BATCHES as u32;
-        let pending = db.tweets_without_ai_metadata(total_size).unwrap_or_default();
+        let pending = db
+            .tweets_without_ai_metadata(total_size)
+            .unwrap_or_default();
 
         if pending.is_empty() {
             // Nothing to enrich — run consolidation if due
@@ -33,12 +43,25 @@ pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_han
                 if let Err(e) = consolidate_dots(&db, &client, &api_key).await {
                     log::error!("[enricher] consolidation error: {}", e);
                 }
+                if let Err(e) = extract_correction_patterns(&db, &client, &api_key).await {
+                    log::error!("[enricher] correction pattern extraction error: {}", e);
+                }
+                match db.retire_stale_patterns() {
+                    Ok(retired) if retired > 0 => {
+                        log::info!("[enricher] retired {} stale correction patterns", retired)
+                    }
+                    Ok(_) => {}
+                    Err(e) => log::error!("[enricher] stale pattern retirement error: {}", e),
+                }
             }
-            let _ = app_handle.emit("sync:event", SyncEvent {
-                worker: "enricher".to_string(),
-                status: "done".to_string(),
-                detail: None,
-            });
+            let _ = app_handle.emit(
+                "sync:event",
+                SyncEvent {
+                    worker: "enricher".to_string(),
+                    status: "done".to_string(),
+                    detail: None,
+                },
+            );
             sleep(Duration::from_secs(ENRICH_INTERVAL_SECS)).await;
             continue;
         }
@@ -72,11 +95,18 @@ pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_han
             log::info!("[enricher] enriched {} tweets", total_count);
         }
 
-        let _ = app_handle.emit("sync:event", SyncEvent {
-            worker: "enricher".to_string(),
-            status: "done".to_string(),
-            detail: if total_count > 0 { Some(format!("+{} enriched", total_count)) } else { None },
-        });
+        let _ = app_handle.emit(
+            "sync:event",
+            SyncEvent {
+                worker: "enricher".to_string(),
+                status: "done".to_string(),
+                detail: if total_count > 0 {
+                    Some(format!("+{} enriched", total_count))
+                } else {
+                    None
+                },
+            },
+        );
 
         sleep(Duration::from_secs(ENRICH_INTERVAL_SECS)).await;
     }
@@ -88,7 +118,9 @@ async fn enrich_batch(
     api_key: &str,
     pending: &[(String, String)],
 ) -> anyhow::Result<u32> {
-    if pending.is_empty() { return Ok(0); }
+    if pending.is_empty() {
+        return Ok(0);
+    }
 
     let mut tweets_text = String::new();
     for (i, (id, content)) in pending.iter().enumerate() {
@@ -100,11 +132,21 @@ async fn enrich_batch(
     let dots_list = if existing_dots.is_empty() {
         String::new()
     } else {
-        let dots_str: Vec<String> = existing_dots.iter().map(|(slug, name)| format!("\"{}\" ({})", slug, name)).collect();
+        let dots_str: Vec<String> = existing_dots
+            .iter()
+            .map(|(slug, name)| format!("\"{}\" ({})", slug, name))
+            .collect();
         format!("\n\nDOTS EXISTANTS (utilise un de ceux-ci si le tweet correspond, sinon crée un nouveau) :\n{}\n", dots_str.join(", "))
     };
+    let corrections = db.corrections_for_prompt(30).unwrap_or_default();
+    let corrections_block = if corrections.is_empty() {
+        String::new()
+    } else {
+        format!("\n{}\n", format_corrections_for_prompt(&corrections))
+    };
 
-    let system_prompt = format!(r#"Tu classes des signets Twitter dans des dossiers thématiques appelés "dots". Pour chaque tweet, réponds avec un tableau JSON :
+    let system_prompt = format!(
+        r#"Tu classes des signets Twitter dans des dossiers thématiques appelés "dots". Pour chaque tweet, réponds avec un tableau JSON :
 
 - "id": l'id du tweet
 - "category": domaine large. Un parmi : "ai/ml", "dev-tools", "web", "crypto", "design", "science", "business", "politics", "culture", "other"
@@ -124,8 +166,10 @@ RÈGLES :
 4. INTERDIT : "unknown", "other", "misc", "general", "article-x", "tweet-indisponible", "long-form-article". Choisis toujours le sujet dominant.
 5. Si le tweet est un mème ou une réaction culturelle, classe-le par le SUJET (ex: un mème sur l'IA va dans le dot du sujet IA concerné).
 6. Slug : minuscules, tirets, 1-3 mots max. Utilise le nom court de l'outil/concept.
-{}
-Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown."#, dots_list);
+{}{}
+Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown."#,
+        corrections_block, dots_list
+    );
 
     let body = serde_json::json!({
         "model": "claude-sonnet-4-6",
@@ -152,44 +196,67 @@ Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown."#, dots_list);
     let resp: serde_json::Value = response.json().await?;
     let content_text = resp["content"][0]["text"].as_str().unwrap_or("[]");
 
-    let mut clean = content_text.trim().to_string();
-    if clean.starts_with("```") {
-        if let Some(pos) = clean.find('\n') { clean = clean[pos + 1..].to_string(); }
-    }
-    if clean.ends_with("```") { clean = clean[..clean.len() - 3].to_string(); }
+    let clean = strip_code_fences(content_text);
 
     let enrichments: Vec<TweetEnrichment> = match serde_json::from_str(clean.trim()) {
         Ok(v) => v,
-        Err(e) => { log::error!("[enricher] Failed to parse response: {}", e); vec![] }
+        Err(e) => {
+            log::error!("[enricher] Failed to parse response: {}", e);
+            vec![]
+        }
     };
 
     let mut count = 0u32;
     for enrichment in &enrichments {
         let topics_json = serde_json::to_string(&enrichment.topics).unwrap_or_default();
-        db.update_ai_metadata(&enrichment.id, &enrichment.category, &enrichment.cluster, &enrichment.summary, &topics_json, &enrichment.r#type)?;
+        db.update_ai_metadata(
+            &enrichment.id,
+            &enrichment.category,
+            &enrichment.cluster,
+            &enrichment.summary,
+            &topics_json,
+            &enrichment.r#type,
+        )?;
 
         if !enrichment.cluster.is_empty() {
             let slug = enrichment.cluster.to_lowercase().replace(' ', "-");
-            let name = enrichment.cluster_name.as_deref()
+            let name = enrichment
+                .cluster_name
+                .as_deref()
                 .filter(|n| !n.is_empty())
                 .map(String::from)
                 .unwrap_or_else(|| {
-                    enrichment.cluster.split('-').map(|w| {
-                        let mut c = w.chars();
-                        match c.next() { None => String::new(), Some(f) => f.to_uppercase().collect::<String>() + c.as_str() }
-                    }).collect::<Vec<_>>().join(" ")
+                    enrichment
+                        .cluster
+                        .split('-')
+                        .map(|w| {
+                            let mut c = w.chars();
+                            match c.next() {
+                                None => String::new(),
+                                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
                 });
 
             let color = match enrichment.category.as_str() {
-                "ai/ml" => Some("#7C3AED"), "dev-tools" => Some("#0891B2"), "web" => Some("#2563EB"),
-                "crypto" => Some("#059669"), "design" => Some("#DB2777"), "science" => Some("#D97706"),
-                "business" => Some("#EA580C"), "politics" => Some("#DC2626"), "culture" => Some("#65A30D"),
+                "ai/ml" => Some("#7C3AED"),
+                "dev-tools" => Some("#0891B2"),
+                "web" => Some("#2563EB"),
+                "crypto" => Some("#059669"),
+                "design" => Some("#DB2777"),
+                "science" => Some("#D97706"),
+                "business" => Some("#EA580C"),
+                "politics" => Some("#DC2626"),
+                "culture" => Some("#65A30D"),
                 _ => Some("#71717A"),
             };
 
             if let Ok(dot_id) = db.get_or_create_dot(&slug, &name, color) {
                 let _ = db.assign_tweet_to_dot(&enrichment.id, dot_id);
             }
+            let _ = db.check_pattern_effectiveness(&slug, &enrichment.topics);
         }
         count += 1;
     }
@@ -203,16 +270,25 @@ async fn consolidate_dots(
     api_key: &str,
 ) -> anyhow::Result<()> {
     let dots = db.dots_for_consolidation()?;
-    if dots.len() < 5 { return Ok(()); } // too few dots to consolidate
+    if dots.len() < 5 {
+        return Ok(());
+    } // too few dots to consolidate
 
     log::info!("[enricher] Running consolidation on {} dots", dots.len());
 
     let mut dots_text = String::new();
     for (slug, name, count, samples) in &dots {
-        dots_text.push_str(&format!("- \"{}\" ({}) [{} signets] Exemples: {}\n", slug, name, count, &samples[..samples.len().min(200)]));
+        dots_text.push_str(&format!(
+            "- \"{}\" ({}) [{} signets] Exemples: {}\n",
+            slug,
+            name,
+            count,
+            &samples[..samples.len().min(200)]
+        ));
     }
 
-    let prompt = format!(r#"Tu es un organisateur de signets. Voici la liste actuelle des "dots" (dossiers thématiques) :
+    let prompt = format!(
+        r#"Tu es un organisateur de signets. Voici la liste actuelle des "dots" (dossiers thématiques) :
 
 {}
 
@@ -243,7 +319,9 @@ RÈGLES STRICTES :
 Réponds avec un tableau JSON :
 [{{"action": "merge", "from": "slug-doublon", "into": "slug-principal"}}]
 
-Si rien à fusionner, réponds []. Pas de fences markdown."#, dots_text);
+Si rien à fusionner, réponds []. Pas de fences markdown."#,
+        dots_text
+    );
 
     let body = serde_json::json!({
         "model": "claude-sonnet-4-6",
@@ -268,13 +346,14 @@ Si rien à fusionner, réponds []. Pas de fences markdown."#, dots_text);
     let resp: serde_json::Value = response.json().await?;
     let content_text = resp["content"][0]["text"].as_str().unwrap_or("[]");
 
-    let mut clean = content_text.trim().to_string();
-    if clean.starts_with("```") { if let Some(pos) = clean.find('\n') { clean = clean[pos + 1..].to_string(); } }
-    if clean.ends_with("```") { clean = clean[..clean.len() - 3].to_string(); }
+    let clean = strip_code_fences(content_text);
 
     let actions: Vec<ConsolidationAction> = match serde_json::from_str(clean.trim()) {
         Ok(v) => v,
-        Err(e) => { log::warn!("[enricher] Failed to parse consolidation: {}", e); vec![] }
+        Err(e) => {
+            log::warn!("[enricher] Failed to parse consolidation: {}", e);
+            vec![]
+        }
     };
 
     let mut merges = 0u32;
@@ -282,26 +361,228 @@ Si rien à fusionner, réponds []. Pas de fences markdown."#, dots_text);
 
     for action in &actions {
         match action {
-            ConsolidationAction::Merge { from, into } => {
-                match db.merge_dots(from, into) {
-                    Ok(n) => { merges += 1; log::info!("[consolidation] Merged '{}' → '{}' ({} tweets)", from, into, n); }
-                    Err(e) => log::warn!("[consolidation] Failed to merge '{}' → '{}': {}", from, into, e),
+            ConsolidationAction::Merge { from, into } => match db.merge_dots(from, into) {
+                Ok(n) => {
+                    merges += 1;
+                    log::info!(
+                        "[consolidation] Merged '{}' → '{}' ({} tweets)",
+                        from,
+                        into,
+                        n
+                    );
                 }
-            }
-            ConsolidationAction::Rename { slug, new_slug, new_name } => {
-                match db.rename_dot(slug, new_name, new_slug) {
-                    Ok(()) => { renames += 1; log::info!("[consolidation] Renamed '{}' → '{}' ({})", slug, new_slug, new_name); }
-                    Err(e) => log::warn!("[consolidation] Failed to rename '{}': {}", slug, e),
+                Err(e) => log::warn!(
+                    "[consolidation] Failed to merge '{}' → '{}': {}",
+                    from,
+                    into,
+                    e
+                ),
+            },
+            ConsolidationAction::Rename {
+                slug,
+                new_slug,
+                new_name,
+            } => match db.rename_dot(slug, new_name, new_slug) {
+                Ok(()) => {
+                    renames += 1;
+                    log::info!(
+                        "[consolidation] Renamed '{}' → '{}' ({})",
+                        slug,
+                        new_slug,
+                        new_name
+                    );
                 }
-            }
+                Err(e) => log::warn!("[consolidation] Failed to rename '{}': {}", slug, e),
+            },
         }
     }
 
     if merges > 0 || renames > 0 {
-        log::info!("[consolidation] Done: {} merges, {} renames", merges, renames);
+        log::info!(
+            "[consolidation] Done: {} merges, {} renames",
+            merges,
+            renames
+        );
     }
 
     Ok(())
+}
+
+async fn extract_correction_patterns(
+    db: &Database,
+    client: &reqwest::Client,
+    api_key: &str,
+) -> anyhow::Result<()> {
+    let candidates = db.correction_pattern_candidates(3)?;
+    if candidates.is_empty() {
+        return Ok(());
+    }
+
+    let mut created = 0u32;
+    for candidate in candidates {
+        let rule_text = infer_correction_pattern_rule(client, api_key, &candidate).await?;
+        if rule_text.is_empty() {
+            continue;
+        }
+
+        let correction_ids: Vec<i64> = candidate
+            .examples
+            .iter()
+            .map(|example| example.correction_id)
+            .collect();
+        db.create_correction_pattern(&rule_text, &correction_ids)?;
+        created += 1;
+    }
+
+    if created > 0 {
+        log::info!("[enricher] created {} correction patterns", created);
+    }
+
+    Ok(())
+}
+
+async fn infer_correction_pattern_rule(
+    client: &reqwest::Client,
+    api_key: &str,
+    candidate: &CorrectionPatternCandidate,
+) -> anyhow::Result<String> {
+    let mut examples_text = String::new();
+    for example in &candidate.examples {
+        let topics = if example.topics.is_empty() {
+            "aucun".to_string()
+        } else {
+            example.topics.join(", ")
+        };
+        match example
+            .reason
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(reason) => examples_text.push_str(&format!(
+                "- {} (topics: {}; raison: {})\n",
+                example.summary.trim(),
+                topics,
+                reason
+            )),
+            None => examples_text.push_str(&format!(
+                "- {} (topics: {})\n",
+                example.summary.trim(),
+                topics
+            )),
+        }
+    }
+
+    let prompt = format!(
+        r#"Ces corrections utilisateur déplacent toutes des tweets du dot "{from_dot}" vers "{to_dot}" :
+{examples}
+
+Quelle est la règle qui explique quand un tweet doit aller dans "{to_dot}" au lieu de "{from_dot}" ?
+
+Contraintes :
+- une seule phrase en français
+- max 100 caractères
+- formulation générale, pas de citation brute
+- focalise-toi sur le signal commun, surtout les raisons explicites si elles existent
+
+Réponds uniquement avec la phrase."#,
+        from_dot = candidate.from_dot_slug,
+        to_dot = candidate.to_dot_slug,
+        examples = examples_text.trim_end(),
+    );
+
+    let body = serde_json::json!({
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 256,
+        "messages": [{ "role": "user", "content": prompt }]
+    });
+
+    let response = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        anyhow::bail!("Correction-pattern API error {}: {}", status, text);
+    }
+
+    let resp: serde_json::Value = response.json().await?;
+    let content_text = resp["content"][0]["text"].as_str().unwrap_or("");
+    let cleaned = strip_code_fences(content_text)
+        .trim()
+        .trim_matches('"')
+        .trim()
+        .to_string();
+
+    Ok(cleaned.chars().take(100).collect())
+}
+
+fn format_corrections_for_prompt(corrections: &[CorrectionForPrompt]) -> String {
+    let mut patterns = Vec::new();
+    let mut recent_corrections = Vec::new();
+
+    for correction in corrections {
+        match correction.kind {
+            CorrectionPromptKind::Pattern => patterns.push(correction),
+            CorrectionPromptKind::Recent => recent_corrections.push(correction),
+        }
+    }
+
+    let mut sections = vec!["CORRECTIONS APPRISES (respecte ces règles absolument) :".to_string()];
+
+    if !patterns.is_empty() {
+        sections.push("PATTERNS :".to_string());
+        for pattern in patterns {
+            let pair = match (&pattern.from_dot_slug, &pattern.to_dot_slug) {
+                (Some(from), Some(to)) => format!("\"{}\" -> \"{}\"", from, to),
+                _ => "signal appris".to_string(),
+            };
+            let confidence = pattern.confidence.unwrap_or(0.0);
+            let source_corrections = pattern.source_corrections.unwrap_or(0);
+            sections.push(format!(
+                "- {} [{} ; confiance: {:.1}, {} corrections]",
+                pattern.text.trim(),
+                pair,
+                confidence,
+                source_corrections
+            ));
+        }
+    }
+
+    if !recent_corrections.is_empty() {
+        sections.push("CORRECTIONS RÉCENTES :".to_string());
+        for correction in recent_corrections {
+            let from_dot = correction.from_dot_slug.as_deref().unwrap_or("inconnu");
+            let to_dot = correction.to_dot_slug.as_deref().unwrap_or("inconnu");
+            sections.push(format!(
+                "- {}: \"{}\" -> \"{}\"",
+                correction.text.trim(),
+                from_dot,
+                to_dot
+            ));
+        }
+    }
+
+    sections.join("\n")
+}
+
+fn strip_code_fences(text: &str) -> String {
+    let mut clean = text.trim().to_string();
+    if clean.starts_with("```") {
+        if let Some(pos) = clean.find('\n') {
+            clean = clean[pos + 1..].to_string();
+        }
+    }
+    if clean.ends_with("```") {
+        clean = clean[..clean.len() - 3].to_string();
+    }
+    clean
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -310,7 +591,11 @@ enum ConsolidationAction {
     #[serde(rename = "merge")]
     Merge { from: String, into: String },
     #[serde(rename = "rename")]
-    Rename { slug: String, new_slug: String, new_name: String },
+    Rename {
+        slug: String,
+        new_slug: String,
+        new_name: String,
+    },
 }
 
 #[derive(Debug, serde::Deserialize)]

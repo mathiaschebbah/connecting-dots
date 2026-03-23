@@ -31,7 +31,10 @@ pub fn run() {
                 )?;
             }
 
-            let app_dir = app.path().app_data_dir().expect("failed to resolve app data dir");
+            let app_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to resolve app data dir");
             std::fs::create_dir_all(&app_dir)?;
 
             let config = AppConfig::load(&app_dir).unwrap_or_default();
@@ -49,7 +52,8 @@ pub fn run() {
             );
 
             app.manage(AppState {
-                db, embedder,
+                db,
+                embedder,
                 config: Arc::new(Mutex::new(config)),
                 app_dir: app_dir.clone(),
             });
@@ -88,6 +92,11 @@ pub fn run() {
             // Dots
             commands::list_dots,
             commands::get_dot_detail,
+            commands::move_tweet_dot,
+            commands::rename_dot,
+            commands::delete_dot,
+            commands::create_dot,
+            commands::get_all_dot_slugs,
             commands::search_dots,
             commands::backfill_dots,
             // Dashboard

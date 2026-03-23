@@ -80,6 +80,31 @@ CREATE TABLE IF NOT EXISTS tweet_dots (
     PRIMARY KEY (tweet_id, dot_id)
 );
 
+CREATE TABLE IF NOT EXISTS correction_patterns (
+    id INTEGER PRIMARY KEY,
+    rule_text TEXT NOT NULL,
+    source_corrections INTEGER NOT NULL DEFAULT 0,
+    last_triggered_at TEXT,
+    effectiveness REAL DEFAULT 0.0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS corrections (
+    id INTEGER PRIMARY KEY,
+    tweet_id TEXT REFERENCES tweets(id),
+    action TEXT NOT NULL,
+    from_dot_slug TEXT,
+    to_dot_slug TEXT,
+    tweet_summary TEXT,
+    tweet_topics TEXT,
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    retired_at TEXT,
+    pattern_id INTEGER REFERENCES correction_patterns(id)
+);
+
 -- Tags
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY,
