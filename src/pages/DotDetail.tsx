@@ -233,7 +233,7 @@ export function DotDetail({ slug }: { slug: string }) {
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
         <div
           ref={scrollRef}
-          className={`overflow-auto transition-all duration-200 ${panelOpen ? "border-r border-border" : ""}`}
+          className={`overflow-auto ${panelOpen ? "border-r border-border" : ""}`}
           style={{ width: panelOpen ? "50%" : "100%" }}
         >
           <div className="sticky top-0 z-10 border-b border-border bg-background px-4 py-2.5">
@@ -302,11 +302,11 @@ export function DotDetail({ slug }: { slug: string }) {
                 {sub_dots.map((subDot) => (
                   <button
                     key={subDot.id}
-                    onClick={() => {
+                  onClick={() => {
                       closePanel();
                       navigate({ type: "dot", slug: subDot.slug });
                     }}
-                    className="rounded-full border border-border px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-white/[0.03]"
+                    className="rounded-full border border-border px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-white/[0.03]"
                   >
                     {subDot.name}
                     <span className="ml-1 tabular-nums">{subDot.bookmark_count}</span>
