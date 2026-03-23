@@ -101,6 +101,14 @@ impl Clix {
         }
     }
 
+    /// Create a new Clix with the same command/prefix (for use in spawn_blocking)
+    pub fn clone_command(&self) -> Self {
+        Self {
+            command: self.command.clone(),
+            args_prefix: self.args_prefix.clone(),
+        }
+    }
+
     /// Run a clix command. Flags (like --json) go BEFORE positional args.
     fn run(&self, args: &[&str]) -> Result<serde_json::Value> {
         let mut cmd = Command::new(&self.command);

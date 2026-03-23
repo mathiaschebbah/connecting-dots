@@ -455,7 +455,7 @@ impl Database {
                     (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media
              FROM tweets t JOIN tweet_dots td ON t.id = td.tweet_id
              WHERE td.dot_id = ?1 AND t.source = 'bookmark'
-             ORDER BY t.created_at DESC LIMIT ?2 OFFSET ?3"
+             ORDER BY t.bookmark_order ASC LIMIT ?2 OFFSET ?3"
         )?;
         let tweet_rows = tweet_stmt.query_map(rusqlite::params![dot.id, limit, offset], map_tweet_row)?;
         let mut tweets = Vec::new();

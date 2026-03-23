@@ -152,7 +152,7 @@ export function UnifiedSearch() {
             {detectMode(query) === "agent" ? (
               <Bot size={16} className="text-emerald-400 shrink-0" />
             ) : (
-              <Search size={16} className="text-muted-fg shrink-0" />
+              <Search size={16} className="text-muted-foreground shrink-0" />
             )}
             <input
               ref={inputRef}
@@ -161,10 +161,10 @@ export function UnifiedSearch() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
               placeholder="Chercher dans les signets..."
-              className="flex-1 text-sm text-fg placeholder-muted-fg bg-transparent outline-none"
+              className="flex-1 text-sm text-foreground placeholder-muted-foreground bg-transparent outline-none"
             />
-            {(searching || agentRunning) && <Loader2 size={14} className="text-fg animate-spin" />}
-            <button onClick={() => setSearchOpen(false)} className="p-1 text-muted-fg hover:text-fg">
+            {(searching || agentRunning) && <Loader2 size={14} className="text-foreground animate-spin" />}
+            <button onClick={() => setSearchOpen(false)} className="p-1 text-muted-foreground hover:text-foreground">
               <X size={16} />
             </button>
           </div>
@@ -172,7 +172,7 @@ export function UnifiedSearch() {
           <div className="flex-1 overflow-y-auto p-2">
             {agentText && (
               <div className="mx-2 my-2 p-4 bg-secondary border border-border rounded-lg">
-                <div className="text-[13px] text-fg/70 leading-relaxed whitespace-pre-wrap">{agentText}</div>
+                <div className="text-[13px] text-foreground/70 leading-relaxed whitespace-pre-wrap">{agentText}</div>
               </div>
             )}
 
@@ -185,10 +185,10 @@ export function UnifiedSearch() {
                     className="group w-full text-left px-4 py-3 hover:bg-secondary rounded-lg transition-colors flex flex-col gap-1"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-fg truncate">{tweet.author_name || tweet.author_handle}</span>
-                      <span className="text-[11px] text-muted-fg">@{tweet.author_handle}</span>
+                      <span className="text-xs font-medium text-foreground truncate">{tweet.author_name || tweet.author_handle}</span>
+                      <span className="text-[11px] text-muted-foreground">@{tweet.author_handle}</span>
                     </div>
-                    <p className="text-xs text-muted-fg line-clamp-2 leading-snug group-hover:text-fg/70">{tweet.ai_summary || tweet.content}</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-snug group-hover:text-foreground/70">{tweet.ai_summary || tweet.content}</p>
                   </button>
                 ))}
               </div>
@@ -196,7 +196,7 @@ export function UnifiedSearch() {
 
             {!searching && !agentRunning && !agentText && results.length === 0 && query.trim() === "" && (
               <div className="px-4 py-8 text-center">
-                <p className="text-xs text-muted-fg">Cherche dans tes signets ou pose une question</p>
+                <p className="text-xs text-muted-foreground">Cherche dans tes signets ou pose une question</p>
               </div>
             )}
           </div>

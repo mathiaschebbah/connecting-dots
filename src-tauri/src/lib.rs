@@ -91,6 +91,10 @@ pub fn run() {
             commands::backfill_dots,
             // Dashboard
             commands::get_dashboard_stats,
+            // Tweet panel
+            commands::open_tweet_panel,
+            commands::close_tweet_panel,
+            commands::open_in_browser,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

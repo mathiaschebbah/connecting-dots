@@ -217,3 +217,47 @@ pub async fn backfill_dots(state: State<'_, AppState>) -> Result<u32, String> {
 pub async fn get_dashboard_stats(state: State<'_, AppState>) -> Result<DashboardStats, String> {
     state.db.get_dashboard_stats().map_err(|e| e.to_string())
 }
+
+// ── Tweet webview (overlay on right half, main webview stays full size) ──
+
+#[tauri::command]
+pub async fn open_tweet_panel(app: tauri::AppHandle, url: String, left_offset: f64, _height: f64, width: f64) -> Result<bool, String> {
+    use tauri::Manager;
+    use tauri::webview::WebviewBuilder;
+
+    // Close existing if any
+    if let Some(existing) = app.get_webview("tweet-panel") {
+        let _ = existing.close();
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    }
+
+    let parsed_url: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let builder = WebviewBuilder::new("tweet-panel", tauri::WebviewUrl::External(parsed_url));
+
+    let win = app.get_window("main").ok_or("No main window")?;
+    // Use the actual window inner size for full coverage
+    let size = win.inner_size().map_err(|e| e.to_string())?;
+    win.add_child(
+        builder,
+        tauri::Position::Logical(tauri::LogicalPosition::new(left_offset, 0.0)),
+        tauri::Size::Physical(tauri::PhysicalSize::new(size.width / 2, size.height)),
+    ).map_err(|e| e.to_string())?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn close_tweet_panel(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+
+    if let Some(wv) = app.get_webview("tweet-panel") {
+        let _ = wv.close();
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn open_in_browser(url: String) -> Result<bool, String> {
+    open::that(&url).map_err(|e| e.to_string())?;
+    Ok(true)
+}

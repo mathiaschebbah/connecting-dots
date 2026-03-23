@@ -64,18 +64,30 @@ async fn enrich_batch(
         tweets_text.push_str(&format!("[Tweet {}] (id: {})\n{}\n\n", i + 1, id, content));
     }
 
-    let system_prompt = r#"Tu analyses des tweets et extrais des métadonnées structurées pour une plateforme de veille technologique destinée à des centres de R&D. Pour chaque tweet, réponds avec un tableau JSON où chaque élément contient :
-- "id": l'id du tweet
-- "category": un domaine large pour le code couleur. Un parmi : "ai/ml", "dev-tools", "web", "crypto", "design", "science", "business", "politics", "culture", "other"
-- "cluster": le NOM DU SUJET/PROJET/OUTIL de granularité moyenne. C'est le champ le plus important — il détermine dans quel "dot" (dossier thématique) le tweet sera rangé. Le niveau de granularité est crucial : ni trop large ("intelligence-artificielle" est TROP large), ni trop précis ("bug-fix-dans-claude-3.5" est TROP précis). Le bon niveau : "claude-code", "cursor-ide", "dspy", "rlhf", "react-server-components", "rust-async", "rag-pipelines", "stable-diffusion", "openai-codex", "mcp-protocol", "langchain", "vercel-ai-sdk". Si le tweet parle d'un outil/produit, utilise son nom. Si c'est une technique, nomme la technique. Si c'est un concept, nomme le concept. Utilise des minuscules avec tirets.
-- "summary": un résumé en une ligne EN FRANÇAIS (max 100 caractères). Capture l'essence du tweet pour un chercheur en veille techno.
-- "topics": tableau de 1-5 tags de sujets (minuscules, sans #). Complètent le cluster avec des concepts liés.
-- "type": un parmi : "tutorial", "opinion", "announcement", "thread", "question", "news", "meme", "showcase", "discussion", "resource", "alpha". Utilise "alpha" pour les informations exclusives ou signaux faibles. Utilise "meme" ou "opinion" pour le contenu sans substance technique.
+    let system_prompt = r#"Tu classes des signets Twitter dans des dossiers thématiques. Pour chaque tweet, réponds avec un tableau JSON :
 
-Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown, sans explication."#;
+- "id": l'id du tweet
+- "category": domaine large. Un parmi : "ai/ml", "dev-tools", "web", "crypto", "design", "science", "business", "politics", "culture", "other"
+- "cluster": le NOM DU DOSSIER où ranger ce signet. C'est le champ le plus important.
+
+RÈGLES POUR LE CLUSTER :
+1. Granularité MOYENNE : le nom d'un outil, projet, technique ou concept. Pas une catégorie large, pas un détail spécifique.
+2. EXEMPLES CORRECTS : "claude-code", "cursor", "dspy", "rlm", "mcp", "rag", "react-server-components", "stable-diffusion", "openai-codex", "langchain", "veo", "gemini", "deepseek"
+3. EXEMPLES INCORRECTS : "intelligence-artificielle" (trop large), "bug-fix-claude-3.5-sonnet" (trop précis), "unknown" (interdit), "other" (interdit), "misc" (interdit)
+4. JAMAIS "unknown", "other", "misc", "unspecified", "unlabeled", "general". Si tu ne sais pas, choisis le sujet dominant du tweet.
+5. Si le tweet est un mème, une réaction, ou du contenu culturel, utilise le SUJET du mème, pas "meme-content".
+6. CONSOLIDE les variantes : utilise "rlm" pas "recursive-language-models" ni "rlm-agents" ni "rlm-evaluation". Un seul nom court par sujet.
+7. Utilise des minuscules avec tirets. Maximum 3 mots.
+8. Si le tweet parle d'un outil/produit spécifique, utilise SON NOM (ex: "cursor", "claude-code", "v0").
+
+- "summary": résumé en UNE LIGNE en FRANÇAIS (max 90 caractères). Commence par un verbe ou un nom.
+- "topics": tableau de 1-3 tags (minuscules, sans #)
+- "type": un parmi : "tutorial", "opinion", "announcement", "thread", "question", "news", "meme", "showcase", "discussion", "resource", "alpha"
+
+Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown."#;
 
     let body = serde_json::json!({
-        "model": "claude-haiku-4-5-20251001",
+        "model": "claude-sonnet-4-6",
         "max_tokens": 4096,
         "system": system_prompt,
         "messages": [{

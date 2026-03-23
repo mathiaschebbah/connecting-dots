@@ -150,14 +150,14 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center">
-      <div className="w-4 h-4 border-2 border-border border-t-fg rounded-full animate-spin" />
+      <div className="w-4 h-4 border-2 border-border border-t-foreground rounded-full animate-spin" />
     </div>
   );
 
   if (!data) return (
     <div className="flex-1 flex flex-col items-center justify-center gap-3">
-      <p className="text-[13px] text-muted-fg">Tweet introuvable</p>
-      <button onClick={back} className="text-xs text-fg">Retour</button>
+      <p className="text-[13px] text-muted-foreground">Tweet introuvable</p>
+      <button onClick={back} className="text-xs text-foreground">Retour</button>
     </div>
   );
 
@@ -172,9 +172,9 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
         <div className="max-w-2xl mx-auto px-6 pt-6 pb-20">
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
             {/* Back */}
-            <button onClick={back} className="flex items-center gap-2 text-xs text-muted-fg hover:text-fg transition-colors mb-6">
+            <button onClick={back} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-6">
               <ArrowLeft size={13} />
-              {fromDot || "Retour"}
+              {fromDot ? fromDot.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : "Retour"}
             </button>
 
             {/* Thread */}
@@ -188,19 +188,19 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
                       {t.author_handle[0]?.toUpperCase()}
                     </div>
                     <div className="min-w-0">
-                      <span className="text-xs font-medium text-fg/70">@{t.author_handle}</span>
-                      <p className="text-xs text-muted-fg line-clamp-2">{t.content}</p>
+                      <span className="text-xs font-medium text-foreground/70">@{t.author_handle}</span>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{t.content}</p>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            {threadLoading && <div className="flex items-center gap-2 mb-4 text-[11px] text-muted-fg"><Loader2 size={12} className="animate-spin" /> Fil...</div>}
+            {threadLoading && <div className="flex items-center gap-2 mb-4 text-[11px] text-muted-foreground"><Loader2 size={12} className="animate-spin" /> Fil...</div>}
 
             {/* Reply context */}
             {tweet.reply_to_handle && (
-              <p className="text-xs text-muted-fg mb-3">
-                En reponse a <span className="text-fg">@{tweet.reply_to_handle}</span>
+              <p className="text-xs text-muted-foreground mb-3">
+                En reponse a <span className="text-foreground">@{tweet.reply_to_handle}</span>
               </p>
             )}
 
@@ -211,27 +211,27 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
                 {tweet.author_handle[0]?.toUpperCase()}
               </div>
               <div>
-                <span className="text-[15px] font-semibold text-fg">{tweet.author_name || tweet.author_handle}</span>
-                <p className="text-xs text-muted-fg">@{tweet.author_handle}</p>
+                <span className="text-[15px] font-semibold text-foreground">{tweet.author_name || tweet.author_handle}</span>
+                <p className="text-xs text-muted-foreground">@{tweet.author_handle}</p>
               </div>
             </div>
 
             {/* AI Summary */}
             {tweet.ai_summary && (
               <div className="mb-4 px-4 py-3 bg-secondary border border-border rounded-lg">
-                <p className="text-[13px] font-medium text-fg">{tweet.ai_summary}</p>
+                <p className="text-[13px] font-medium text-foreground">{tweet.ai_summary}</p>
               </div>
             )}
 
             {/* Content */}
-            <div className="text-[15px] text-fg leading-relaxed whitespace-pre-wrap mb-4">{tweet.content}</div>
+            <div className="text-[15px] text-foreground leading-relaxed whitespace-pre-wrap mb-4">{tweet.content}</div>
 
             {/* Resolved */}
             {tweet.resolved_content && (
               <div className="mb-4 border border-border rounded-lg p-4 bg-card">
-                {tweet.resolved_author && <p className="text-xs font-medium text-fg/70 mb-2">@{tweet.resolved_author}</p>}
-                <p className="text-[13px] text-fg/70 whitespace-pre-wrap line-clamp-[12]">{tweet.resolved_content}</p>
-                {tweet.resolved_url && <a href={tweet.resolved_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-fg hover:underline mt-2 inline-block">{tweet.resolved_url}</a>}
+                {tweet.resolved_author && <p className="text-xs font-medium text-foreground/70 mb-2">@{tweet.resolved_author}</p>}
+                <p className="text-[13px] text-foreground/70 whitespace-pre-wrap line-clamp-[12]">{tweet.resolved_content}</p>
+                {tweet.resolved_url && <a href={tweet.resolved_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-foreground hover:underline mt-2 inline-block">{tweet.resolved_url}</a>}
               </div>
             )}
 
@@ -247,83 +247,83 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
             {/* Quoted */}
             {quoted && (
               <div className="mb-4 border border-border rounded-lg p-4 bg-card">
-                <p className="text-xs font-medium text-fg/70 mb-1">@{quoted.author_handle}</p>
-                <p className="text-[13px] text-fg/70 line-clamp-4">{quoted.text}</p>
+                <p className="text-xs font-medium text-foreground/70 mb-1">@{quoted.author_handle}</p>
+                <p className="text-[13px] text-foreground/70 line-clamp-4">{quoted.text}</p>
               </div>
             )}
 
             {/* Date */}
-            <p className="text-xs text-muted-fg mb-4 tabular-nums">{formatDate(tweet.created_at)}</p>
+            <p className="text-xs text-muted-foreground mb-4 tabular-nums">{formatDate(tweet.created_at)}</p>
 
             {/* Metrics */}
-            <div className="flex items-center gap-5 py-3 border-y border-border mb-6 text-muted-fg">
+            <div className="flex items-center gap-5 py-3 border-y border-border mb-6 text-muted-foreground">
               <span className="flex items-center gap-1.5"><Heart size={14} /><span className="text-xs tabular-nums">{fmt(tweet.likes)}</span></span>
               <span className="flex items-center gap-1.5"><Repeat2 size={14} /><span className="text-xs tabular-nums">{fmt(tweet.retweets)}</span></span>
               <span className="flex items-center gap-1.5"><MessageCircle size={14} /><span className="text-xs tabular-nums">{fmt(tweet.replies_count)}</span></span>
               {tweet.views > 0 && <span className="flex items-center gap-1.5 opacity-50"><Eye size={14} /><span className="text-xs tabular-nums">{fmt(tweet.views)}</span></span>}
               <div className="flex-1" />
-              {tweet.tweet_url && <a href={tweet.tweet_url} target="_blank" rel="noopener noreferrer" className="text-xs text-fg hover:underline font-medium flex items-center gap-1"><ExternalLink size={12} /> X</a>}
+              {tweet.tweet_url && <a href={tweet.tweet_url} target="_blank" rel="noopener noreferrer" className="text-xs text-foreground hover:underline font-medium flex items-center gap-1"><ExternalLink size={12} /> X</a>}
             </div>
 
             {/* Topics */}
             {tweet.ai_topics?.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-6">
                 {tweet.ai_topics.map((t) => (
-                  <span key={t} className="text-[10px] px-2 py-0.5 rounded-md bg-secondary text-muted-fg border border-border">{t}</span>
+                  <span key={t} className="text-[10px] px-2 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border">{t}</span>
                 ))}
               </div>
             )}
 
             {/* Tags */}
             <div className="mb-6">
-              <h3 className="text-[11px] font-medium text-muted-fg uppercase tracking-wider mb-2 flex items-center gap-1.5"><Tag size={11} /> Tags</h3>
+              <h3 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><Tag size={11} /> Tags</h3>
               <div className="flex flex-wrap items-center gap-2">
                 {tags.map((tag) => (
-                  <span key={tag.id} className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-card text-fg/70 border border-border">
+                  <span key={tag.id} className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-card text-foreground/70 border border-border">
                     {tag.name}
-                    <button onClick={() => removeTag(tag.id)} className="opacity-0 group-hover:opacity-100 text-muted-fg hover:text-red-400"><Trash2 size={9} /></button>
+                    <button onClick={() => removeTag(tag.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400"><Trash2 size={9} /></button>
                   </span>
                 ))}
                 <input value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTag()}
-                  placeholder="+" className="w-16 px-2 py-1 text-[11px] bg-transparent border border-dashed border-border rounded-md placeholder:text-muted-fg focus:outline-none focus:ring-1 focus:ring-ring text-fg/70" />
+                  placeholder="+" className="w-16 px-2 py-1 text-[11px] bg-transparent border border-dashed border-border rounded-md placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring text-foreground/70" />
               </div>
             </div>
 
             {/* Notes */}
             <div className="mb-6">
-              <h3 className="text-[11px] font-medium text-muted-fg uppercase tracking-wider mb-2 flex items-center gap-1.5"><StickyNote size={11} /> Notes</h3>
+              <h3 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><StickyNote size={11} /> Notes</h3>
               <div className="space-y-2">
                 {notes.map((note) => (
                   <div key={note.id} className="group flex items-start gap-2 p-3 bg-card rounded-lg border border-border">
                     {editingNote === note.id ? (
                       <div className="flex-1">
                         <textarea value={editNoteContent} onChange={(e) => setEditNoteContent(e.target.value)}
-                          className="w-full px-2 py-1 text-xs border border-border rounded-md bg-bg text-fg focus:outline-none focus:ring-1 focus:ring-ring" rows={2} autoFocus />
+                          className="w-full px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring" rows={2} autoFocus />
                         <div className="flex gap-2 mt-1">
-                          <button onClick={() => saveEditNote(note.id)} className="text-[11px] text-fg">Sauver</button>
-                          <button onClick={() => setEditingNote(null)} className="text-[11px] text-muted-fg">Annuler</button>
+                          <button onClick={() => saveEditNote(note.id)} className="text-[11px] text-foreground">Sauver</button>
+                          <button onClick={() => setEditingNote(null)} className="text-[11px] text-muted-foreground">Annuler</button>
                         </div>
                       </div>
                     ) : (
                       <>
-                        <p className="flex-1 text-xs text-fg/70 whitespace-pre-wrap">{note.content}</p>
+                        <p className="flex-1 text-xs text-foreground/70 whitespace-pre-wrap">{note.content}</p>
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => { setEditingNote(note.id); setEditNoteContent(note.content); }} className="text-muted-fg hover:text-fg"><Pencil size={11} /></button>
-                          <button onClick={() => deleteNote(note.id)} className="text-muted-fg hover:text-red-400"><Trash2 size={11} /></button>
+                          <button onClick={() => { setEditingNote(note.id); setEditNoteContent(note.content); }} className="text-muted-foreground hover:text-foreground"><Pencil size={11} /></button>
+                          <button onClick={() => deleteNote(note.id)} className="text-muted-foreground hover:text-red-400"><Trash2 size={11} /></button>
                         </div>
                       </>
                     )}
                   </div>
                 ))}
                 <input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()}
-                  placeholder="Ajouter une note..." className="w-full px-3 py-2 text-xs border border-dashed border-border rounded-lg placeholder:text-muted-fg focus:outline-none focus:ring-1 focus:ring-ring bg-transparent text-fg/70" />
+                  placeholder="Ajouter une note..." className="w-full px-3 py-2 text-xs border border-dashed border-border rounded-lg placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring bg-transparent text-foreground/70" />
               </div>
             </div>
 
             {/* Similar */}
             {similar.length > 0 && (
               <div>
-                <h3 className="text-[11px] font-medium text-muted-fg uppercase tracking-wider mb-3">Connexions</h3>
+                <h3 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-3">Connexions</h3>
                 <div className="space-y-2">
                   {similar.slice(0, 5).map((s) => (
                     <div key={s.id} onClick={() => navigate({ type: "tweet", id: s.id, fromDot })}><TweetCard tweet={s} compact /></div>
@@ -339,25 +339,25 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
       <motion.div
         animate={{ width: chatOpen ? 360 : 44 }}
         transition={{ type: "spring", stiffness: 400, damping: 35 }}
-        className="border-l border-border bg-bg flex flex-col overflow-hidden"
+        className="border-l border-border bg-background flex flex-col overflow-hidden"
       >
         {!chatOpen ? (
           <button onClick={() => setChatOpen(true)}
-            className="flex flex-col items-center justify-center h-full gap-2 text-muted-fg hover:text-fg transition-colors">
+            className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground hover:text-foreground transition-colors">
             <Bot size={18} />
             <span className="text-[9px] font-medium" style={{ writingMode: "vertical-rl" }}>Agent</span>
           </button>
         ) : (
           <>
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <div className="flex items-center gap-2"><Bot size={14} className="text-fg" /><span className="text-xs font-medium text-fg">Agent</span></div>
-              <button onClick={() => setChatOpen(false)} className="text-muted-fg hover:text-fg text-[11px]">Fermer</button>
+              <div className="flex items-center gap-2"><Bot size={14} className="text-foreground" /><span className="text-xs font-medium text-foreground">Agent</span></div>
+              <button onClick={() => setChatOpen(false)} className="text-muted-foreground hover:text-foreground text-[11px]">Fermer</button>
             </div>
             <div ref={chatRef} className="flex-1 overflow-auto px-4 py-4 space-y-3">
               {chatMessages.length === 0 && (
                 <div className="text-center py-8">
                   <Bot size={20} className="text-border mx-auto mb-2" />
-                  <p className="text-[11px] text-muted-fg">Pose une question sur ce tweet</p>
+                  <p className="text-[11px] text-muted-foreground">Pose une question sur ce tweet</p>
                 </div>
               )}
               {chatMessages.map((msg, i) => (
@@ -365,20 +365,20 @@ export function TweetPage({ tweetId, fromDot }: { tweetId: string; fromDot?: str
                   <div className={cn(
                     "max-w-[90%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap",
                     msg.role === "user"
-                      ? "bg-fg text-bg"
-                      : "bg-card text-fg/70 border border-border"
+                      ? "bg-foreground text-background"
+                      : "bg-card text-foreground/70 border border-border"
                   )}>{msg.content}</div>
                 </div>
               ))}
               {chatRunning && chatMessages[chatMessages.length - 1]?.role !== "assistant" && (
-                <div className="flex items-center gap-2 text-[11px] text-muted-fg"><Loader2 size={12} className="animate-spin" /></div>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 size={12} className="animate-spin" /></div>
               )}
             </div>
             <div className="p-3 border-t border-border">
               <form onSubmit={(e) => { e.preventDefault(); sendChat(); }} className="flex gap-2">
                 <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Demande..."
-                  disabled={chatRunning} className="flex-1 px-3 py-2 bg-card border border-border rounded-lg text-xs text-fg placeholder:text-muted-fg focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50" />
-                <button type="submit" disabled={chatRunning || !chatInput.trim()} className="px-3 py-2 bg-fg text-bg rounded-lg disabled:opacity-30 transition-colors"><Send size={13} /></button>
+                  disabled={chatRunning} className="flex-1 px-3 py-2 bg-card border border-border rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50" />
+                <button type="submit" disabled={chatRunning || !chatInput.trim()} className="px-3 py-2 bg-foreground text-background rounded-lg disabled:opacity-30 transition-colors"><Send size={13} /></button>
               </form>
             </div>
           </>

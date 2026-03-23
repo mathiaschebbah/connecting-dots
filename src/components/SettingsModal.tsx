@@ -92,8 +92,8 @@ export function SettingsModal({ open, onClose }: Props) {
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-            <span className="text-[15px] font-semibold tracking-tight text-fg">Parametres</span>
-            <button onClick={onClose} className="text-muted-fg hover:text-fg p-1.5 rounded-lg hover:bg-secondary transition-all">
+            <span className="text-[15px] font-semibold tracking-tight text-foreground">Parametres</span>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-secondary transition-all">
               <X size={18} />
             </button>
           </div>
@@ -101,15 +101,15 @@ export function SettingsModal({ open, onClose }: Props) {
           <div className="p-6 space-y-6">
             {/* API Key */}
             <div className="space-y-3">
-              <div className="text-xs font-semibold text-muted-fg uppercase tracking-wider">Cle API</div>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cle API</div>
               <div className="border border-border rounded-xl p-4 bg-secondary space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-card rounded-lg border border-border">
-                    <Key size={14} className="text-muted-fg" />
+                    <Key size={14} className="text-muted-foreground" />
                   </div>
-                  <span className="text-[13px] text-fg/80 font-medium flex-1">Cle API Anthropic</span>
-                  <div className={cn("w-2.5 h-2.5 rounded-full", hasKey ? "bg-emerald-500" : "bg-muted-fg")} />
-                  <button onClick={() => setEditingKey(!editingKey)} className="text-[11px] text-fg font-semibold px-2.5 py-1 rounded-lg hover:bg-card transition-all">
+                  <span className="text-[13px] text-foreground/80 font-medium flex-1">Cle API Anthropic</span>
+                  <div className={cn("w-2.5 h-2.5 rounded-full", hasKey ? "bg-emerald-500" : "bg-muted-foreground")} />
+                  <button onClick={() => setEditingKey(!editingKey)} className="text-[11px] text-foreground font-semibold px-2.5 py-1 rounded-lg hover:bg-card transition-all">
                     {editingKey ? "Annuler" : "Modifier"}
                   </button>
                 </div>
@@ -117,8 +117,8 @@ export function SettingsModal({ open, onClose }: Props) {
                   <form onSubmit={(e) => { e.preventDefault(); saveKey(); }} className="flex gap-2">
                     <input type="password" value={newKey} onChange={(e) => setNewKey(e.target.value)}
                       placeholder="sk-ant-..." autoFocus
-                      className="flex-1 px-3 py-2 bg-bg border border-border rounded-lg text-xs font-mono text-fg focus:outline-none focus:ring-1 focus:ring-ring transition-all" />
-                    <button type="submit" className="px-4 py-2 bg-fg text-bg rounded-lg text-[11px] font-semibold hover:opacity-90 transition-all">Sauver</button>
+                      className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-all" />
+                    <button type="submit" className="px-4 py-2 bg-foreground text-background rounded-lg text-[11px] font-semibold hover:opacity-90 transition-all">Sauver</button>
                   </form>
                 )}
               </div>
@@ -129,18 +129,18 @@ export function SettingsModal({ open, onClose }: Props) {
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-secondary rounded-lg">
-                    <Radar size={12} className="text-muted-fg" />
+                    <Radar size={12} className="text-muted-foreground" />
                   </div>
-                  <span className="text-xs font-semibold text-muted-fg uppercase tracking-wider">Sujets surveilles</span>
-                  <span className="px-1.5 py-0.5 bg-secondary text-muted-fg text-[10px] rounded-full font-bold tabular-nums">{topics.length}</span>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sujets surveilles</span>
+                  <span className="px-1.5 py-0.5 bg-secondary text-muted-foreground text-[10px] rounded-full font-bold tabular-nums">{topics.length}</span>
                 </div>
                 <div className="space-y-1.5">
                   {topics.map((t) => (
-                    <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 bg-secondary border border-border rounded-xl group hover:border-muted-fg/30 transition-all">
-                      <div className={cn("w-2 h-2 rounded-full shrink-0", t.is_active ? "bg-emerald-500" : "bg-muted-fg")} />
-                      <span className="text-xs text-fg/80 font-medium flex-1 truncate">{t.query}</span>
+                    <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 bg-secondary border border-border rounded-xl group hover:border-muted-foreground/30 transition-all">
+                      <div className={cn("w-2 h-2 rounded-full shrink-0", t.is_active ? "bg-emerald-500" : "bg-muted-foreground")} />
+                      <span className="text-xs text-foreground/80 font-medium flex-1 truncate">{t.query}</span>
                       {t.last_polled_at && (
-                        <span className="text-[10px] text-muted-fg shrink-0 tabular-nums">
+                        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
                           {new Date(t.last_polled_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                         </span>
                       )}
@@ -149,7 +149,7 @@ export function SettingsModal({ open, onClose }: Props) {
                           await invoke("delete_monitored_topic", { id: t.id });
                           loadTopics();
                         }}
-                        className="opacity-0 group-hover:opacity-100 text-muted-fg hover:text-red-400 transition-all p-1 rounded-lg hover:bg-card"
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 rounded-lg hover:bg-card"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -161,18 +161,18 @@ export function SettingsModal({ open, onClose }: Props) {
 
             {/* Actions */}
             <div className="space-y-3">
-              <div className="text-xs font-semibold text-muted-fg uppercase tracking-wider">Actions manuelles</div>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions manuelles</div>
               <div className="flex flex-wrap items-center gap-2">
                 <button onClick={() => manualSync("bookmarks")} disabled={syncing}
-                  className="flex items-center gap-2 px-4 py-2 bg-fg text-bg rounded-lg text-[11px] font-semibold hover:opacity-90 disabled:opacity-30 transition-all">
+                  className="flex items-center gap-2 px-4 py-2 bg-foreground text-background rounded-lg text-[11px] font-semibold hover:opacity-90 disabled:opacity-30 transition-all">
                   <RefreshCw size={13} className={syncing ? "animate-spin" : ""} /> Sync signets
                 </button>
                 <button onClick={() => manualSync("feed")} disabled={syncing}
-                  className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border text-fg/80 rounded-lg text-[11px] font-semibold hover:bg-card disabled:opacity-30 transition-all">
+                  className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border text-foreground/80 rounded-lg text-[11px] font-semibold hover:bg-card disabled:opacity-30 transition-all">
                   <RefreshCw size={13} /> Sync flux
                 </button>
                 <button onClick={embedPending} disabled={syncing}
-                  className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border text-fg/80 rounded-lg text-[11px] font-semibold hover:bg-card disabled:opacity-30 transition-all">
+                  className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border text-foreground/80 rounded-lg text-[11px] font-semibold hover:bg-card disabled:opacity-30 transition-all">
                   <Cpu size={13} /> Embeddings
                 </button>
               </div>
@@ -191,9 +191,9 @@ export function SettingsModal({ open, onClose }: Props) {
                 >
                   <Sparkles size={13} /> Re-enrichir tout
                 </button>
-                <span className="text-[10px] text-muted-fg font-medium">Force le re-traitement IA</span>
+                <span className="text-[10px] text-muted-foreground font-medium">Force le re-traitement IA</span>
               </div>
-              {syncResult && <div className="text-[11px] text-muted-fg">{syncResult}</div>}
+              {syncResult && <div className="text-[11px] text-muted-foreground">{syncResult}</div>}
             </div>
           </div>
         </motion.div>

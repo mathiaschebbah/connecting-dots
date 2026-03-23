@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { motion } from "framer-motion";
 
 interface ApiKeyGateProps {
   onAuthenticated: () => void;
@@ -14,10 +13,8 @@ export function ApiKeyGate({ onAuthenticated }: ApiKeyGateProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!apiKey.trim()) return;
-
     setLoading(true);
     setError("");
-
     try {
       await invoke("set_api_key", { apiKey: apiKey.trim() });
       onAuthenticated();
@@ -29,26 +26,17 @@ export function ApiKeyGate({ onAuthenticated }: ApiKeyGateProps) {
   };
 
   return (
-    <div className="h-screen w-screen bg-bg flex items-center justify-center">
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="w-full max-w-sm px-6"
-      >
+    <div className="h-screen w-screen bg-background flex items-center justify-center">
+      <div className="w-full max-w-sm px-6">
         <div className="mb-10">
-          <h1 className="text-lg font-semibold tracking-tight text-fg mb-1">
-            Connecting Dots
-          </h1>
-          <p className="text-[13px] text-muted-fg">
-            Ton deuxieme cerveau, branche sur X
-          </p>
+          <h1 className="text-[20px] font-bold text-foreground mb-1">Connecting Dots</h1>
+          <p className="text-[15px] text-muted-foreground">Organise tes signets X par sujet</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="api-key" className="block text-xs text-muted-fg mb-1.5 font-medium">
-              Cle API Anthropic
+            <label htmlFor="api-key" className="block text-[13px] text-muted-foreground mb-1.5">
+              Clef API Anthropic
             </label>
             <input
               id="api-key"
@@ -56,26 +44,26 @@ export function ApiKeyGate({ onAuthenticated }: ApiKeyGateProps) {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="sk-ant-..."
-              className="w-full px-3 py-2 bg-card border border-border rounded-md text-fg placeholder-muted-fg focus:outline-none focus:ring-1 focus:ring-ring transition-all font-mono text-[13px]"
+              className="w-full px-3 py-2.5 bg-secondary border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#1d9bf0] focus:bg-background transition-all font-mono text-[14px]"
               autoFocus
             />
           </div>
 
-          {error && <p className="text-red-400 text-xs">{error}</p>}
+          {error && <p className="text-[#f4212e] text-[13px]">{error}</p>}
 
           <button
             type="submit"
             disabled={loading || !apiKey.trim()}
-            className="w-full py-2 bg-fg text-bg rounded-md font-medium text-[13px] hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="w-full py-2.5 bg-foreground text-background rounded-full font-bold text-[15px] hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? "Connexion..." : "Demarrer"}
+            {loading ? "Connexion..." : "Commencer"}
           </button>
 
-          <p className="text-muted-fg text-[11px] text-center pt-1">
-            Ta cle reste locale. Elle ne quitte jamais ta machine.
+          <p className="text-muted-foreground text-[13px] text-center">
+            Ta clef reste sur ta machine.
           </p>
         </form>
-      </motion.div>
+      </div>
     </div>
   );
 }

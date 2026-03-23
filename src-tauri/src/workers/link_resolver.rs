@@ -143,91 +143,62 @@ async fn resolve_batch(db: &Database) -> anyhow::Result<u32> {
             content.clone()
         };
 
-        // Step 2a: If it's an X article, fetch the article content via HTTP
-        if let Some(_article_id) = extract_article_id(&resolved_url) {
-            match fetch_x_article(&resolved_url).await {
-                Some((title, body)) => {
-                    let resolved_text = if body.is_empty() {
-                        format!("{}\n\n{}", title, resolved_url)
-                    } else {
-                        format!("{}\n\n{}", title, body)
-                    };
-                    db.store_resolved_content(tweet_id, &resolved_text, None, &resolved_url)?;
-                    count += 1;
-                }
-                None => {
-                    // Fallback: store URL with whatever title we can get
-                    match fetch_page_title(&resolved_url).await {
-                        Some(title) => {
-                            db.store_resolved_content(tweet_id, &format!("{}\n\n{}", title, resolved_url), None, &resolved_url)?;
-                            count += 1;
-                        }
-                        None => {
-                            db.store_resolved_content(tweet_id, &resolved_url, None, &resolved_url)?;
-                            count += 1;
-                        }
+        // Step 2: Try to fetch via clix tweet_detail (works for tweets AND articles)
+        // First, try the tweet_id itself — it might have an article attached
+        let detail_id = extract_tweet_id(&resolved_url).unwrap_or_else(|| tweet_id.clone());
+        let detail_id_log = detail_id.clone();
+        let clix_clone = clix.clone_command();
+
+        match tokio::task::spawn_blocking(move || clix_clone.tweet_detail(&detail_id)).await {
+            Ok(Ok(detail)) => {
+                let mut resolved_text = detail.tweet.text.clone();
+
+                // If the tweet has an article, append the full article content
+                if let Some(article) = &detail.article {
+                    if let Some(title) = &article.title {
+                        resolved_text.push_str(&format!("\n\n--- {} ---\n", title));
+                    }
+                    if let Some(md) = &article.markdown {
+                        resolved_text.push_str(md);
                     }
                 }
+
+                let author = &detail.tweet.author_handle;
+                let url = detail.tweet.tweet_url.clone().unwrap_or_else(|| {
+                    format!("https://x.com/{}/status/{}", author, detail_id_log)
+                });
+                db.store_resolved_content(tweet_id, &resolved_text, Some(author), &url)?;
+                let _ = db.upsert_tweets(&[detail.tweet], "resolved");
+                count += 1;
+                continue;
             }
-            continue;
+            Ok(Err(e)) => {
+                log::warn!("[resolver] clix failed for {}: {}", detail_id_log, e);
+            }
+            Err(e) => {
+                log::warn!("[resolver] task failed for {}: {}", detail_id_log, e);
+            }
         }
 
-        // Step 2b: If it's a tweet link, fetch the tweet
-        if let Some(linked_id) = extract_tweet_id(&resolved_url) {
-            // Check if we already have this tweet in DB
-            match db.get_tweet_full(&linked_id) {
-                Ok(Some(existing)) => {
-                    db.store_resolved_content(
-                        tweet_id,
-                        &existing.content,
-                        Some(&existing.author_handle),
-                        &format!("https://x.com/{}/status/{}", existing.author_handle, linked_id),
-                    )?;
-                    count += 1;
-                    continue;
-                }
-                _ => {}
+        // Step 3: Fallback — try HTTP scraping for articles or page titles
+        if extract_article_id(&resolved_url).is_some() {
+            if let Some((title, body)) = fetch_x_article(&resolved_url).await {
+                let text = if body.is_empty() { format!("{}\n\n{}", title, resolved_url) } else { format!("{}\n\n{}", title, body) };
+                db.store_resolved_content(tweet_id, &text, None, &resolved_url)?;
+                count += 1;
+                continue;
             }
+        }
 
-            // Fetch from Twitter
-            match clix.tweet_detail(&linked_id) {
-                Ok(detail) => {
-                    let mut resolved_text = detail.tweet.text.clone();
-                    if let Some(article) = &detail.article {
-                        if let Some(title) = &article.title {
-                            resolved_text.push_str(&format!("\n\n--- Article: {} ---\n", title));
-                        }
-                        if let Some(md) = &article.markdown {
-                            resolved_text.push_str(md);
-                        }
-                    }
-
-                    let author = &detail.tweet.author_handle;
-                    let url = detail.tweet.tweet_url.clone().unwrap_or_else(|| {
-                        format!("https://x.com/{}/status/{}", author, linked_id)
-                    });
-                    db.store_resolved_content(tweet_id, &resolved_text, Some(author), &url)?;
-                    let _ = db.upsert_tweets(&[detail.tweet], "resolved");
-                    count += 1;
-                }
-                Err(e) => {
-                    log::warn!("[resolver] Failed to fetch tweet {}: {}", linked_id, e);
-                    db.store_resolved_content(tweet_id, "[failed to resolve]", None, &resolved_url)?;
-                }
+        // Step 4: External URL — fetch title
+        match fetch_page_title(&resolved_url).await {
+            Some(title) => {
+                db.store_resolved_content(tweet_id, &format!("{}\n\n{}", title, resolved_url), None, &resolved_url)?;
+                count += 1;
             }
-        } else {
-            // Not a tweet link — it's an external article/page. Fetch title via HTTP.
-            match fetch_page_title(&resolved_url).await {
-                Some(title) => {
-                    let resolved_text = format!("{}\n\n{}", title, resolved_url);
-                    db.store_resolved_content(tweet_id, &resolved_text, None, &resolved_url)?;
-                    count += 1;
-                }
-                None => {
-                    // Store the resolved URL itself as content
-                    db.store_resolved_content(tweet_id, &resolved_url, None, &resolved_url)?;
-                    count += 1;
-                }
+            None => {
+                db.store_resolved_content(tweet_id, &resolved_url, None, &resolved_url)?;
+                count += 1;
             }
         }
     }

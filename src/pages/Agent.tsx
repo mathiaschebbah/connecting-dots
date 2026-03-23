@@ -126,17 +126,17 @@ export function Agent() {
   };
 
   const suggestions = [
-    "Trouve les tweets sur les agents IA dans mes signets",
-    "Quels sont les sujets principaux que j'ai bookmarkes ?",
-    "Cherche sur Twitter les dernieres infos sur Claude Code",
-    "Connecte mes signets RAG avec ceux sur les embeddings",
+    "Trouve mes signets sur les agents IA",
+    "Quels sont les sujets que j'ai le plus sauvegardes ?",
+    "Cherche les dernieres infos sur Claude Code",
+    "Relie mes signets RAG avec ceux sur les embeddings",
   ];
 
   return (
-    <div className="h-full flex flex-col bg-bg">
+    <div className="h-full flex flex-col bg-background">
       <div className="px-6 py-3 border-b border-border">
-        <h2 className="text-lg font-semibold tracking-tight text-fg">Agent</h2>
-        <p className="text-[11px] text-muted-fg">Pose n'importe quelle question sur tes signets et Twitter</p>
+        <h2 className="text-[17px] font-bold text-foreground">Agent</h2>
+        <p className="text-[13px] text-muted-foreground">Explore tes signets, cherche sur X, organise par tags</p>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
@@ -147,13 +147,13 @@ export function Agent() {
             transition={{ duration: 0.3 }}
             className="flex flex-col items-start justify-center h-full gap-4 py-20 max-w-lg"
           >
-            <p className="text-[13px] text-muted-fg">Qu'est-ce que tu veux explorer ?</p>
+            <p className="text-[13px] text-muted-foreground">Qu'est-ce que tu veux explorer ?</p>
             <div className="flex flex-col gap-1.5 w-full">
               {suggestions.map((s) => (
                 <button
                   key={s}
                   onClick={() => sendMessage(s)}
-                  className="text-xs text-muted-fg hover:text-fg px-3 py-2 rounded-md border border-border hover:bg-card transition-colors text-left bg-transparent"
+                  className="text-xs text-muted-foreground hover:text-foreground px-3 py-2 rounded-md border border-border hover:bg-card transition-colors text-left bg-transparent"
                 >
                   {s}
                 </button>
@@ -171,7 +171,7 @@ export function Agent() {
             className={msg.role === "user" ? "flex justify-end" : ""}
           >
             {msg.role === "user" ? (
-              <div className="max-w-[80%] px-3 py-2 rounded-lg bg-fg text-bg text-[13px]">
+              <div className="max-w-[80%] px-3 py-2 rounded-lg bg-foreground text-background text-[13px]">
                 {msg.content}
               </div>
             ) : (
@@ -192,7 +192,7 @@ export function Agent() {
                 ))}
 
                 {msg.content && (
-                  <div className="text-[13px] text-fg/80 leading-relaxed whitespace-pre-wrap">
+                  <div className="text-[13px] text-foreground/80 leading-relaxed whitespace-pre-wrap">
                     {msg.content}
                   </div>
                 )}
@@ -202,7 +202,7 @@ export function Agent() {
         ))}
 
         {isRunning && messages[messages.length - 1]?.role !== "assistant" && (
-          <div className="flex items-center gap-2 text-xs text-muted-fg">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 size={14} className="animate-spin" />
             Reflexion en cours...
           </div>
@@ -218,15 +218,15 @@ export function Agent() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Demande a l'agent..."
+            placeholder="Pose une question..."
             disabled={isRunning}
-            className="flex-1 px-3 py-2 bg-card border border-border rounded-md text-[13px] text-fg placeholder-muted-fg focus:outline-none focus:ring-1 focus:ring-ring transition-all disabled:opacity-50"
+            className="flex-1 px-3 py-2 bg-card border border-border rounded-md text-[13px] text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-all disabled:opacity-50"
             autoFocus
           />
           <button
             type="submit"
             disabled={isRunning || !input.trim()}
-            className="px-4 py-2 bg-fg text-bg rounded-md text-[13px] font-medium hover:opacity-90 disabled:opacity-30 transition-colors"
+            className="px-4 py-2 bg-foreground text-background rounded-md text-[13px] font-medium hover:opacity-90 disabled:opacity-30 transition-colors"
           >
             <Send size={16} />
           </button>
@@ -269,7 +269,7 @@ function renderToolResult(_tool: string, result: unknown): React.ReactNode {
               <TweetCard key={tweet.id || i} tweet={tweet} compact />
             ))}
             {tweets.length > 5 && (
-              <div className="text-[10px] text-muted-fg pl-4">
+              <div className="text-[10px] text-muted-foreground pl-4">
                 +{tweets.length - 5} de plus
               </div>
             )}
@@ -304,7 +304,7 @@ function renderToolResult(_tool: string, result: unknown): React.ReactNode {
     }
 
     return (
-      <pre className="text-[10px] text-muted-fg pl-3 overflow-x-auto font-mono">
+      <pre className="text-[10px] text-muted-foreground pl-3 overflow-x-auto font-mono">
         {JSON.stringify(result, null, 2).slice(0, 500)}
       </pre>
     );

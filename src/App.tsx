@@ -43,8 +43,8 @@ function App() {
 
   if (hasApiKey === null) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-bg">
-        <div className="w-4 h-4 border-2 border-border border-t-fg rounded-full animate-spin" />
+      <div className="h-screen w-screen flex items-center justify-center bg-background">
+        <div className="w-4 h-4 border-2 border-border border-t-foreground rounded-full animate-spin" />
       </div>
     );
   }
@@ -70,7 +70,7 @@ function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-bg text-fg">
+    <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
       <CortexBar />
       <div className="flex-1 overflow-hidden flex flex-col">
         {content}
