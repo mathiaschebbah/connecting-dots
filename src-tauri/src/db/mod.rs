@@ -693,19 +693,24 @@ impl Database {
     /// Search tweets by keyword and return the dots that contain matching tweets, with match counts
     pub fn search_dots_by_content(&self, query: &str, limit: u32) -> Result<Vec<Dot>> {
         let conn = self.conn.lock().unwrap();
+        let like_pattern = format!("%{}%", query);
         let mut stmt = conn.prepare(
             "SELECT d.id, d.name, d.slug, d.parent_id, d.description, d.color, d.created_at,
-                    COUNT(DISTINCT td.tweet_id) as match_count
+                    (SELECT COUNT(*) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id
+                     WHERE td.dot_id = d.id AND t.source = 'bookmark') as bookmark_count
              FROM dots d
-             JOIN tweet_dots td ON td.dot_id = d.id
-             JOIN tweets t ON td.tweet_id = t.id
-             JOIN tweets_fts fts ON t.rowid = fts.rowid
-             WHERE tweets_fts MATCH ?1 AND t.source = 'bookmark'
-             GROUP BY d.id
-             ORDER BY match_count DESC
+             WHERE d.name LIKE ?3 OR d.slug LIKE ?3
+                OR d.id IN (
+                    SELECT DISTINCT td.dot_id
+                    FROM tweet_dots td
+                    JOIN tweets t ON td.tweet_id = t.id
+                    JOIN tweets_fts fts ON t.rowid = fts.rowid
+                    WHERE tweets_fts MATCH ?1 AND t.source = 'bookmark'
+                )
+             ORDER BY bookmark_count DESC
              LIMIT ?2",
         )?;
-        let rows = stmt.query_map(rusqlite::params![query, limit], |row| {
+        let rows = stmt.query_map(rusqlite::params![query, limit, like_pattern], |row| {
             Ok(Dot {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -732,7 +737,7 @@ impl Database {
                     (SELECT COUNT(*) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id WHERE td.dot_id = d.id AND t.source = 'bookmark') as bookmark_count
              FROM dots d WHERE d.parent_id IS NULL
              AND d.slug NOT IN ('unknown', 'other', 'article-link', 'unknown-article', 'twitter-article', 'meme-content', 'pop-culture-humor', 'article-x', 'articles-x', 'x-article', 'x-articles', 'long-form-article', 'misc', 'unspecified', 'unlabeled', 'tweet-indisponible', 'contenu-viral', 'general')
-             AND (SELECT COUNT(*) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id WHERE td.dot_id = d.id AND t.source = 'bookmark') >= 2
+             AND (SELECT COUNT(*) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id WHERE td.dot_id = d.id AND t.source = 'bookmark') >= 1
              ORDER BY (SELECT MAX(t.created_at) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id WHERE td.dot_id = d.id AND t.source = 'bookmark') DESC"
         )?;
         let rows = stmt.query_map([], |row| {

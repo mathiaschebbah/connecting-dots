@@ -316,7 +316,7 @@ export function DotDetail({ slug }: { slug: string }) {
             )}
 
             {tweets.length > 8 && (
-              <div className="px-4 pt-1 pb-2">
+              <div className="px-4 pt-3 pb-2">
                 <div className="relative">
                   <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <label htmlFor="search-dot-detail" className="sr-only">
