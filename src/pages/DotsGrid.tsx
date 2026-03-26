@@ -64,7 +64,6 @@ export function DotsGrid() {
   const [dots, setDots] = useState<Dot[]>([]);
   const [searchResults, setSearchResults] = useState<Dot[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [backfilling, setBackfilling] = useState(false);
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -74,34 +73,34 @@ export function DotsGrid() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const backfilledRef = useRef(false);
   const navigate = useAppStore((s) => s.navigate);
 
   const loadDots = useCallback(async () => {
     try {
       const result = await invoke<Dot[]>("list_dots");
       setDots(result);
-      if (result.length === 0 && !backfilling) {
-        setBackfilling(true);
-        try {
-          const count = await invoke<number>("backfill_dots");
-          if (count > 0) {
-            setDots(await invoke<Dot[]>("list_dots"));
-          }
-        } catch {
-          // noop
-        } finally {
-          setBackfilling(false);
-        }
-      }
+      return result;
     } catch {
-      // noop
+      return [];
     } finally {
       setLoading(false);
     }
-  }, [backfilling]);
+  }, []);
 
+  // Initial load + one-time backfill if empty
   useEffect(() => {
-    loadDots();
+    loadDots().then(async (result) => {
+      if (result.length === 0 && !backfilledRef.current) {
+        backfilledRef.current = true;
+        try {
+          const count = await invoke<number>("backfill_dots");
+          if (count > 0) await loadDots();
+        } catch {
+          // noop
+        }
+      }
+    });
   }, [loadDots]);
 
   useEffect(() => {
@@ -183,7 +182,7 @@ export function DotsGrid() {
 
   const displayed = searchResults ?? dots;
 
-  if (loading || backfilling) {
+  if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-foreground" />
