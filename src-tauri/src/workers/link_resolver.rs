@@ -197,7 +197,7 @@ async fn resolve_one(
 
     let detail_result: Result<TweetDetail, _> =
         tokio::task::spawn_blocking(move || {
-            let fetcher = BookmarksFetcher::from_clix_config()?;
+            let fetcher = BookmarksFetcher::from_browser()?;
             fetcher.fetch_tweet_detail(&detail_id2)
         })
         .await?;

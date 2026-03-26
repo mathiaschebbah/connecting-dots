@@ -24,6 +24,8 @@ impl AppConfig {
         let tmp_path = app_dir.join("config.json.tmp");
         let data = serde_json::to_string_pretty(self)?;
         std::fs::write(&tmp_path, &data)?;
+        // On Windows, rename fails if target exists — remove first
+        let _ = std::fs::remove_file(&path);
         std::fs::rename(&tmp_path, &path)?;
         Ok(())
     }

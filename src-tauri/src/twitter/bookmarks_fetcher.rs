@@ -16,33 +16,23 @@ pub struct BookmarksFetcher {
 }
 
 impl BookmarksFetcher {
-    /// Load auth from clix's stored credentials
-    pub fn from_clix_config() -> Result<Self> {
-        let config_path = dirs::config_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join("clix")
-            .join("auth.json");
+    /// Extract Twitter/X auth credentials from the user's browser cookies.
+    /// Tries all installed browsers (Chrome, Firefox, Edge, Brave, Safari, etc.)
+    pub fn from_browser() -> Result<Self> {
+        let domains = vec![".x.com".to_string(), ".twitter.com".to_string(), "x.com".to_string(), "twitter.com".to_string()];
 
-        let data = std::fs::read_to_string(&config_path)
-            .context("Failed to read clix auth.json. Run 'clix auth login' first.")?;
+        let cookies = rookie::load(Some(domains))
+            .map_err(|e| anyhow::anyhow!("Impossible de lire les cookies du navigateur: {}. Connecte-toi à X dans ton navigateur.", e))?;
 
-        let auth: Value = serde_json::from_str(&data)?;
-        let default_account = auth["accounts"]["default"]
-            .as_object()
-            .context("No default account in clix auth")?;
-
-        let ct0 = default_account["ct0"]
-            .as_str()
-            .context("Missing ct0")?
-            .to_string();
-
-        let cookies = default_account["cookies"]
-            .as_object()
-            .context("Missing cookies")?;
+        let ct0 = cookies
+            .iter()
+            .find(|c| c.name == "ct0")
+            .map(|c| c.value.clone())
+            .context("Cookie ct0 introuvable. Connecte-toi à x.com dans ton navigateur.")?;
 
         let cookies_str = cookies
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or("")))
+            .map(|c| format!("{}={}", c.name, c.value))
             .collect::<Vec<_>>()
             .join("; ");
 
@@ -56,8 +46,17 @@ impl BookmarksFetcher {
             .unwrap_or_else(|_| reqwest::blocking::Client::new())
     }
 
-    fn graphql_get(&self, client: &reqwest::blocking::Client, url: &str) -> Result<Value> {
-        let response = client
+    fn authenticated_get_json(
+        &self,
+        client: &reqwest::blocking::Client,
+        url: &str,
+        endpoint_name: &str,
+    ) -> Result<Value> {
+        let path = url::Url::parse(url)
+            .map(|u| u.path().to_string())
+            .unwrap_or_default();
+
+        let mut req = client
             .get(url)
             .header("authorization", BEARER_TOKEN)
             .header("x-csrf-token", &self.ct0)
@@ -65,20 +64,58 @@ impl BookmarksFetcher {
             .header("x-twitter-auth-type", "OAuth2Session")
             .header("x-twitter-active-user", "yes")
             .header("user-agent", USER_AGENT)
+            .header("accept", "application/json, text/plain, */*");
+
+        // Add transaction ID if available (bypasses Cloudflare)
+        if let Ok(tid) = super::graphql_ops::generate_transaction_id("GET", &path) {
+            req = req.header("x-client-transaction-id", tid);
+        }
+
+        let response = req
             .send()
-            .context("Failed to connect to Twitter GraphQL")?;
+            .with_context(|| format!("Failed to connect to {}", endpoint_name))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().unwrap_or_default();
             anyhow::bail!(
-                "Twitter GraphQL error {}: {}",
+                "{} error {}: {}",
+                endpoint_name,
                 status,
                 &text[..text.len().min(200)]
             );
         }
 
-        Ok(response.json()?)
+        response
+            .json()
+            .with_context(|| format!("Failed to parse JSON from {}", endpoint_name))
+    }
+
+    fn graphql_get(&self, client: &reqwest::blocking::Client, url: &str) -> Result<Value> {
+        self.authenticated_get_json(client, url, "Twitter GraphQL")
+    }
+
+    // ── Account ──
+
+    /// Extract the authenticated user's ID from the `twid` cookie.
+    pub fn viewer_user_id(&self) -> Result<String> {
+        self.cookies_str
+            .split("; ")
+            .find_map(|c| {
+                let (name, value) = c.split_once('=')?;
+                if name == "twid" {
+                    let decoded = value.replace("%3D", "=").replace("%3d", "=");
+                    decoded
+                        .trim_matches('"')
+                        .strip_prefix("u=")
+                        .and_then(|id| id.split('&').next())
+                        .filter(|id| !id.is_empty())
+                        .map(|id| id.to_string())
+                } else {
+                    None
+                }
+            })
+            .context("Cookie 'twid' introuvable. Connecte-toi à x.com dans ton navigateur.")
     }
 
     // ── Bookmarks ──

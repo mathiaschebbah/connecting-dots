@@ -54,6 +54,12 @@ pub fn run() {
             let db = Database::open(&db_path).expect("failed to open database");
             let db = Arc::new(db);
 
+            // Pre-initialize Twitter GraphQL ops cache before workers start
+            // This prevents race conditions between concurrent cookie/homepage fetches
+            if let Err(e) = crate::twitter::graphql_ops::ensure_cache_sync() {
+                log::warn!("Failed to pre-init GraphQL ops: {}", e);
+            }
+
             let worker_handles = Arc::new(WorkerHandles::new());
             workers::start_all(
                 db.clone(),
@@ -73,6 +79,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // X Account
+            commands::get_x_account,
             // Sync
             commands::sync_bookmarks,
             // Tweets

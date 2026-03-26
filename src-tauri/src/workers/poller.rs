@@ -66,7 +66,7 @@ pub async fn poll_loop_with_events(
 
 async fn poll_bookmarks(db: &Database) -> anyhow::Result<u32> {
     let tweets = tokio::task::spawn_blocking(|| {
-        let fetcher = BookmarksFetcher::from_clix_config()?;
+        let fetcher = BookmarksFetcher::from_browser()?;
         fetcher.fetch_all(50)
     })
     .await??;

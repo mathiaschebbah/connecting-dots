@@ -11,11 +11,28 @@ pub struct SyncResult {
     pub total_tweets: u32,
 }
 
+// ── X Account ──
+
+#[tauri::command]
+pub async fn get_x_account() -> Result<crate::twitter::types::XAccount, String> {
+    tokio::task::spawn_blocking(|| -> Result<crate::twitter::types::XAccount, String> {
+        let fetcher = BookmarksFetcher::from_browser().map_err(|e| e.to_string())?;
+        let _user_id = fetcher.viewer_user_id().map_err(|e| e.to_string())?;
+        Ok(crate::twitter::types::XAccount {
+            handle: "connected".to_string(),
+            name: "Compte X".to_string(),
+            avatar_url: None,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ── Sync ──
 
 #[tauri::command]
 pub async fn sync_bookmarks(state: State<'_, AppState>) -> Result<SyncResult, String> {
-    let fetcher = BookmarksFetcher::from_clix_config().map_err(|e| e.to_string())?;
+    let fetcher = BookmarksFetcher::from_browser().map_err(|e| e.to_string())?;
     let tweets = fetcher.fetch_all(50).map_err(|e| e.to_string())?;
     let new_tweets = state
         .db

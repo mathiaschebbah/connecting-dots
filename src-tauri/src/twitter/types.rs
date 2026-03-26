@@ -37,6 +37,14 @@ pub struct Engagement {
     pub views: Option<i64>,
 }
 
+/// Authenticated user's X profile
+#[derive(Debug, Deserialize, Clone, serde::Serialize)]
+pub struct XAccount {
+    pub handle: String,
+    pub name: String,
+    pub avatar_url: Option<String>,
+}
+
 /// Tweet detail with optional article content
 #[derive(Debug, Deserialize, Clone, serde::Serialize)]
 pub struct TweetDetail {
