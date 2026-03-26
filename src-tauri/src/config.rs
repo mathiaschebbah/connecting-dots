@@ -5,6 +5,10 @@ use std::path::Path;
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct AppConfig {
     pub anthropic_api_key: Option<String>,
+    #[serde(default)]
+    pub api_usage_input_tokens: u64,
+    #[serde(default)]
+    pub api_usage_output_tokens: u64,
 }
 
 impl AppConfig {
@@ -39,5 +43,17 @@ impl AppConfig {
 
     pub fn api_key(&self) -> Option<&str> {
         self.anthropic_api_key.as_deref().filter(|k| !k.is_empty())
+    }
+
+    pub fn add_usage(&mut self, input_tokens: u64, output_tokens: u64) {
+        self.api_usage_input_tokens += input_tokens;
+        self.api_usage_output_tokens += output_tokens;
+    }
+
+    pub fn estimated_cost_usd(&self) -> f64 {
+        // Claude Haiku 4.5 pricing: $0.80/MTok input, $4/MTok output
+        let input_cost = self.api_usage_input_tokens as f64 * 0.80 / 1_000_000.0;
+        let output_cost = self.api_usage_output_tokens as f64 * 4.0 / 1_000_000.0;
+        input_cost + output_cost
     }
 }

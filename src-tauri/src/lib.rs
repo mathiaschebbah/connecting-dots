@@ -62,17 +62,21 @@ pub fn run() {
                 log::warn!("Failed to pre-init GraphQL ops: {}", e);
             }
 
+            let config = Arc::new(Mutex::new(config));
             let worker_handles = Arc::new(WorkerHandles::new());
+            let api_key = config.lock().unwrap().api_key().map(String::from);
             workers::start_all(
                 db.clone(),
-                config.api_key().map(String::from),
+                api_key,
                 app.handle().clone(),
                 &worker_handles,
+                Some(config.clone()),
+                Some(app_dir.clone()),
             );
 
             app.manage(AppState {
                 db,
-                config: Arc::new(Mutex::new(config)),
+                config,
                 app_dir: app_dir.clone(),
                 workers: worker_handles,
             });
@@ -91,6 +95,8 @@ pub fn run() {
             commands::reset_enrichments,
             commands::check_api_key,
             commands::set_api_key,
+            commands::delete_api_key,
+            commands::get_api_usage,
             // Dots
             commands::list_dots,
             commands::get_dot_detail,

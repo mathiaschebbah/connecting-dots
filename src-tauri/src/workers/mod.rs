@@ -2,6 +2,7 @@ pub mod enricher;
 pub mod link_resolver;
 pub mod poller;
 
+use crate::config::AppConfig;
 use crate::db::Database;
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
@@ -38,6 +39,8 @@ pub fn start_all(
     api_key: Option<String>,
     app_handle: AppHandle,
     worker_handles: &WorkerHandles,
+    config: Option<Arc<Mutex<AppConfig>>>,
+    app_dir: Option<std::path::PathBuf>,
 ) {
     worker_handles.stop_all();
 
@@ -56,8 +59,10 @@ pub fn start_all(
     // AI enrichment (~15s, requires API key)
     if let Some(key) = api_key {
         let handle = app_handle.clone();
+        let cfg = config.clone();
+        let dir = app_dir.clone();
         new_handles.push(tauri::async_runtime::spawn(
-            enricher::enrich_loop_with_events(db.clone(), key, handle),
+            enricher::enrich_loop_with_events(db.clone(), key, handle, cfg, dir),
         ));
     }
 

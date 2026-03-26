@@ -1,6 +1,7 @@
+use crate::config::AppConfig;
 use crate::db::{CorrectionForPrompt, CorrectionPatternCandidate, CorrectionPromptKind, Database};
 use crate::workers::SyncEvent;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
@@ -9,7 +10,7 @@ const BATCH_SIZE: u32 = 10;
 const PARALLEL_BATCHES: usize = 3;
 const CONSOLIDATION_EVERY_N_CYCLES: u32 = 40; // consolidate dots every ~10 minutes
 
-pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_handle: AppHandle) {
+pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_handle: AppHandle, config: Option<Arc<Mutex<AppConfig>>>, app_dir: Option<std::path::PathBuf>) {
     log::info!(
         "Worker started: AI enrichment every {}s ({} parallel batches of {})",
         ENRICH_INTERVAL_SECS,
@@ -40,10 +41,10 @@ pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_han
             // Nothing to enrich — run consolidation if due
             cycle_count += 1;
             if cycle_count % CONSOLIDATION_EVERY_N_CYCLES == 0 {
-                if let Err(e) = consolidate_dots(&db, &client, &api_key).await {
+                if let Err(e) = consolidate_dots(&db, &client, &api_key, config.as_ref(), app_dir.as_deref()).await {
                     log::error!("[enricher] consolidation error: {}", e);
                 }
-                if let Err(e) = extract_correction_patterns(&db, &client, &api_key).await {
+                if let Err(e) = extract_correction_patterns(&db, &client, &api_key, config.as_ref(), app_dir.as_deref()).await {
                     log::error!("[enricher] correction pattern extraction error: {}", e);
                 }
                 match db.retire_stale_patterns() {
@@ -77,8 +78,10 @@ pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_han
             let client = client.clone();
             let api_key = api_key.clone();
             let db = db.clone();
+            let cfg = config.clone();
+            let dir = app_dir.clone();
             handles.push(tokio::spawn(async move {
-                enrich_batch(&db, &client, &api_key, &chunk).await
+                enrich_batch(&db, &client, &api_key, &chunk, cfg.as_ref(), dir.as_deref()).await
             }));
         }
 
@@ -117,6 +120,8 @@ async fn enrich_batch(
     client: &reqwest::Client,
     api_key: &str,
     pending: &[(String, String)],
+    config: Option<&Arc<Mutex<AppConfig>>>,
+    app_dir: Option<&std::path::Path>,
 ) -> anyhow::Result<u32> {
     if pending.is_empty() {
         return Ok(0);
@@ -194,6 +199,10 @@ Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown."#,
     }
 
     let resp: serde_json::Value = response.json().await?;
+
+    // Track API usage
+    track_usage(config, app_dir, &resp);
+
     let content_text = resp["content"][0]["text"].as_str().unwrap_or("[]");
 
     let clean = strip_code_fences(content_text);
@@ -268,6 +277,8 @@ async fn consolidate_dots(
     db: &Database,
     client: &reqwest::Client,
     api_key: &str,
+    config: Option<&Arc<Mutex<AppConfig>>>,
+    app_dir: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
     let dots = db.dots_for_consolidation()?;
     if dots.len() < 5 {
@@ -344,6 +355,10 @@ Si rien à fusionner, réponds []. Pas de fences markdown."#,
     }
 
     let resp: serde_json::Value = response.json().await?;
+
+    // Track API usage
+    track_usage(config, app_dir, &resp);
+
     let content_text = resp["content"][0]["text"].as_str().unwrap_or("[]");
 
     let clean = strip_code_fences(content_text);
@@ -412,6 +427,8 @@ async fn extract_correction_patterns(
     db: &Database,
     client: &reqwest::Client,
     api_key: &str,
+    config: Option<&Arc<Mutex<AppConfig>>>,
+    app_dir: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
     let candidates = db.correction_pattern_candidates(3)?;
     if candidates.is_empty() {
@@ -420,7 +437,7 @@ async fn extract_correction_patterns(
 
     let mut created = 0u32;
     for candidate in candidates {
-        let rule_text = infer_correction_pattern_rule(client, api_key, &candidate).await?;
+        let rule_text = infer_correction_pattern_rule(client, api_key, &candidate, config, app_dir).await?;
         if rule_text.is_empty() {
             continue;
         }
@@ -445,6 +462,8 @@ async fn infer_correction_pattern_rule(
     client: &reqwest::Client,
     api_key: &str,
     candidate: &CorrectionPatternCandidate,
+    config: Option<&Arc<Mutex<AppConfig>>>,
+    app_dir: Option<&std::path::Path>,
 ) -> anyhow::Result<String> {
     let mut examples_text = String::new();
     for example in &candidate.examples {
@@ -513,6 +532,10 @@ Réponds uniquement avec la phrase."#,
     }
 
     let resp: serde_json::Value = response.json().await?;
+
+    // Track API usage
+    track_usage(config, app_dir, &resp);
+
     let content_text = resp["content"][0]["text"].as_str().unwrap_or("");
     let cleaned = strip_code_fences(content_text)
         .trim()
@@ -570,6 +593,25 @@ fn format_corrections_for_prompt(corrections: &[CorrectionForPrompt]) -> String 
     }
 
     sections.join("\n")
+}
+
+fn track_usage(
+    config: Option<&Arc<Mutex<AppConfig>>>,
+    app_dir: Option<&std::path::Path>,
+    resp: &serde_json::Value,
+) {
+    if let (Some(cfg), Some(dir)) = (config, app_dir) {
+        let input_tokens = resp["usage"]["input_tokens"].as_u64().unwrap_or(0);
+        let output_tokens = resp["usage"]["output_tokens"].as_u64().unwrap_or(0);
+        if input_tokens > 0 || output_tokens > 0 {
+            if let Ok(mut c) = cfg.lock() {
+                c.add_usage(input_tokens, output_tokens);
+                if let Err(e) = c.save(dir) {
+                    log::warn!("[enricher] failed to save usage: {}", e);
+                }
+            }
+        }
+    }
 }
 
 fn strip_code_fences(text: &str) -> String {

@@ -74,6 +74,31 @@ pub async fn check_api_key(state: State<'_, AppState>) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub async fn delete_api_key(state: State<'_, AppState>) -> Result<bool, String> {
+    let mut config = state.config.lock().map_err(|_| "config lock error".to_string())?;
+    config.anthropic_api_key = None;
+    config.save(&state.app_dir).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ApiUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub estimated_cost_usd: f64,
+}
+
+#[tauri::command]
+pub async fn get_api_usage(state: State<'_, AppState>) -> Result<ApiUsage, String> {
+    let config = state.config.lock().map_err(|_| "config lock error".to_string())?;
+    Ok(ApiUsage {
+        input_tokens: config.api_usage_input_tokens,
+        output_tokens: config.api_usage_output_tokens,
+        estimated_cost_usd: config.estimated_cost_usd(),
+    })
+}
+
+#[tauri::command]
 pub async fn set_api_key(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
@@ -114,6 +139,8 @@ pub async fn set_api_key(
         Some(api_key),
         app_handle,
         &state.workers,
+        Some(state.config.clone()),
+        Some(state.app_dir.clone()),
     );
     Ok(true)
 }

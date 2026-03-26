@@ -23,6 +23,12 @@ interface XAccount {
   avatar_url: string | null;
 }
 
+interface ApiUsage {
+  input_tokens: number;
+  output_tokens: number;
+  estimated_cost_usd: number;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -37,14 +43,21 @@ export function SettingsModal({ open, onClose }: Props) {
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [xAccount, setXAccount] = useState<XAccount | null>(null);
+  const [apiUsage, setApiUsage] = useState<ApiUsage | null>(null);
 
   useEffect(() => {
     if (open) {
       invoke<boolean>("check_api_key").then(setHasKey).catch(() => setHasKey(false));
       invoke<DashboardStats>("get_dashboard_stats").then(setStats).catch(() => setStats(null));
       invoke<XAccount>("get_x_account").then((a) => { console.log("x_account:", a); setXAccount(a); }).catch((e) => { console.error("get_x_account failed:", e); setXAccount(null); });
+      invoke<ApiUsage>("get_api_usage").then(setApiUsage).catch(() => setApiUsage(null));
     }
   }, [open]);
+
+  const deleteKey = async () => {
+    await invoke("delete_api_key");
+    setHasKey(false);
+  };
 
   const saveKey = async () => {
     if (!newKey.trim()) return;
@@ -164,12 +177,22 @@ export function SettingsModal({ open, onClose }: Props) {
                       </span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setEditingKey(!editingKey)}
-                    className="shrink-0 rounded-full border border-border px-3.5 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-white/[0.05]"
-                  >
-                    {editingKey ? "Annuler" : hasKey ? "Modifier" : "Ajouter"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {hasKey && !editingKey && (
+                      <button
+                        onClick={deleteKey}
+                        className="shrink-0 text-[12px] font-medium text-muted-foreground transition-colors hover:text-red-400"
+                      >
+                        Supprimer
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setEditingKey(!editingKey)}
+                      className="shrink-0 rounded-full border border-border px-3.5 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-white/[0.05]"
+                    >
+                      {editingKey ? "Annuler" : hasKey ? "Modifier" : "Ajouter"}
+                    </button>
+                  </div>
                 </div>
                 {editingKey && (
                   <form
@@ -196,6 +219,22 @@ export function SettingsModal({ open, onClose }: Props) {
                   </form>
                 )}
               </div>
+
+              {/* API Usage */}
+              {apiUsage && apiUsage.estimated_cost_usd > 0 && (
+                <div className="px-5 py-4">
+                  <div className="text-[12px] font-medium text-muted-foreground">Consommation API</div>
+                  <div className="mt-2 space-y-1 text-[13px] text-foreground/80">
+                    <div>
+                      <span className="font-semibold text-foreground">${apiUsage.estimated_cost_usd.toFixed(2)}</span>
+                      <span className="ml-1.5 text-muted-foreground">estimés</span>
+                    </div>
+                    <div className="text-[12px] text-muted-foreground">
+                      {apiUsage.input_tokens.toLocaleString()} tokens in / {apiUsage.output_tokens.toLocaleString()} tokens out
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Stats */}
               {stats && (
