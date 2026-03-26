@@ -1,5 +1,4 @@
 use crate::db::Database;
-use crate::embeddings::Embedder;
 use crate::twitter::bookmarks_fetcher::BookmarksFetcher;
 use crate::workers::SyncEvent;
 use std::sync::Arc;
@@ -13,7 +12,6 @@ pub struct PollConfig {
 
 pub async fn poll_loop_with_events(
     db: Arc<Database>,
-    embedder: Arc<Embedder>,
     config: PollConfig,
     app_handle: AppHandle,
 ) {
@@ -32,10 +30,10 @@ pub async fn poll_loop_with_events(
             },
         );
 
-        match poll_bookmarks(&db, &embedder).await {
-            Ok((new, embedded)) => {
+        match poll_bookmarks(&db).await {
+            Ok(new) => {
                 let detail = if new > 0 {
-                    log::info!("[bookmarks] +{} tweets, {} embedded", new, embedded);
+                    log::info!("[bookmarks] +{} tweets", new);
                     Some(format!("+{} signets", new))
                 } else {
                     None
@@ -66,7 +64,7 @@ pub async fn poll_loop_with_events(
     }
 }
 
-async fn poll_bookmarks(db: &Database, embedder: &Embedder) -> anyhow::Result<(u32, u32)> {
+async fn poll_bookmarks(db: &Database) -> anyhow::Result<u32> {
     let tweets = tokio::task::spawn_blocking(|| {
         let fetcher = BookmarksFetcher::from_clix_config()?;
         fetcher.fetch_all(50)
@@ -78,17 +76,5 @@ async fn poll_bookmarks(db: &Database, embedder: &Embedder) -> anyhow::Result<(u
     let ids: Vec<String> = tweets.iter().map(|t| t.id.clone()).collect();
     db.set_bookmark_order(&ids)?;
 
-    let mut embedded_count = 0u32;
-    let pending = db.tweets_without_embedding(50)?;
-    if !pending.is_empty() {
-        let texts: Vec<String> = pending.iter().map(|(_, content)| content.clone()).collect();
-        let embeddings = embedder.embed_batch(&texts)?;
-        for ((tweet_id, _), embedding) in pending.iter().zip(embeddings.iter()) {
-            if db.store_embedding(tweet_id, embedding).is_ok() {
-                embedded_count += 1;
-            }
-        }
-    }
-
-    Ok((new_count, embedded_count))
+    Ok(new_count)
 }

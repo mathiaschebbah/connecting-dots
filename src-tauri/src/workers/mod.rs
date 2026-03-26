@@ -3,7 +3,6 @@ pub mod link_resolver;
 pub mod poller;
 
 use crate::db::Database;
-use crate::embeddings::Embedder;
 use std::sync::Arc;
 use tauri::AppHandle;
 
@@ -16,16 +15,14 @@ pub struct SyncEvent {
 
 pub fn start_all(
     db: Arc<Database>,
-    embedder: Arc<Embedder>,
     api_key: Option<String>,
     app_handle: AppHandle,
 ) {
-    // Bookmarks polling (~60s)
+    // Bookmarks polling (~300s)
     {
         let handle = app_handle.clone();
         tauri::async_runtime::spawn(poller::poll_loop_with_events(
             db.clone(),
-            embedder.clone(),
             poller::PollConfig { interval_secs: 300 },
             handle,
         ));

@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::embeddings::EMBEDDING_DIM;
 use crate::twitter::clix::ClixTweet;
 
 pub struct Database {
@@ -40,12 +39,6 @@ CREATE TABLE IF NOT EXISTS corrections (
 
 impl Database {
     pub fn open(path: &Path) -> Result<Self> {
-        unsafe {
-            rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
-                sqlite_vec::sqlite3_vec_init as *const (),
-            )));
-        }
-
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         let db = Self {
@@ -60,14 +53,6 @@ impl Database {
         let schema = include_str!("schema.sql");
         conn.execute_batch(schema)?;
         conn.execute_batch(LEARNING_SCHEMA)?;
-
-        conn.execute_batch(&format!(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS tweets_vec USING vec0(
-                tweet_id TEXT PRIMARY KEY,
-                embedding float[{EMBEDDING_DIM}]
-            );"
-        ))?;
-
         Ok(())
     }
 
@@ -174,58 +159,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn store_embedding(&self, tweet_id: &str, embedding: &[f32]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        let _ = conn.execute(
-            "DELETE FROM tweets_vec WHERE tweet_id = ?1",
-            rusqlite::params![tweet_id],
-        );
-        conn.execute(
-            "INSERT INTO tweets_vec (tweet_id, embedding) VALUES (?1, ?2)",
-            rusqlite::params![tweet_id, f32_slice_to_bytes(embedding)],
-        )?;
-        conn.execute(
-            "UPDATE tweets SET embedding = ?1 WHERE id = ?2",
-            rusqlite::params![f32_slice_to_bytes(embedding), tweet_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn tweets_without_embedding(&self, limit: u32) -> Result<Vec<(String, String)>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, COALESCE(resolved_content, content) FROM tweets WHERE embedding IS NULL LIMIT ?1")?;
-        let rows = stmt.query_map(rusqlite::params![limit], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?;
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-        Ok(results)
-    }
-
     // ── Search ──
-
-    pub fn search_semantic(&self, query_embedding: &[f32], limit: u32) -> Result<Vec<TweetRow>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
-                    t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
-                    (t.media_json IS NOT NULL AND t.media_json != '[]') as has_media, t.author_avatar
-             FROM tweets t JOIN tweets_vec v ON t.id = v.tweet_id
-             WHERE v.embedding MATCH ?1 AND k = ?2
-             ORDER BY distance",
-        )?;
-        let rows = stmt.query_map(
-            rusqlite::params![f32_slice_to_bytes(query_embedding), limit],
-            map_tweet_row,
-        )?;
-        let mut tweets = Vec::new();
-        for row in rows {
-            tweets.push(row?);
-        }
-        Ok(tweets)
-    }
 
     pub fn tweet_count(&self) -> Result<u32> {
         let conn = self.conn.lock().unwrap();
@@ -305,13 +239,11 @@ impl Database {
                     reply_to_id, reply_to_handle, is_retweet, retweeted_by,
                     media_json, quoted_tweet_json,
                     likes, retweets, replies_count, quotes, bookmarks_count, views,
-                    source, ai_category, ai_cluster, ai_summary, ai_topics, ai_type, embedding,
+                    source, ai_category, ai_cluster, ai_summary, ai_topics, ai_type,
                     resolved_content, resolved_author, resolved_url
              FROM tweets WHERE id = ?1",
         )?;
         let result = stmt.query_row(rusqlite::params![tweet_id], |row| {
-            let embedding_blob: Option<Vec<u8>> = row.get(28)?;
-            let has_embedding = embedding_blob.is_some();
             let topics_raw: Option<String> = row.get(26)?;
             let topics: Vec<String> = topics_raw
                 .and_then(|s| serde_json::from_str(&s).ok())
@@ -345,10 +277,9 @@ impl Database {
                 ai_summary: row.get(25)?,
                 ai_topics: topics,
                 ai_type: row.get(27)?,
-                has_embedding,
-                resolved_content: row.get(29)?,
-                resolved_author: row.get(30)?,
-                resolved_url: row.get(31)?,
+                resolved_content: row.get(28)?,
+                resolved_author: row.get(29)?,
+                resolved_url: row.get(30)?,
             })
         });
         match result {
@@ -358,23 +289,7 @@ impl Database {
         }
     }
 
-    pub fn get_embedding(&self, tweet_id: &str) -> Result<Option<Vec<f32>>> {
-        let conn = self.conn.lock().unwrap();
-        let result: Result<Vec<u8>, _> = conn.query_row(
-            "SELECT embedding FROM tweets WHERE id = ?1 AND embedding IS NOT NULL",
-            rusqlite::params![tweet_id],
-            |row| row.get(0),
-        );
-        match result {
-            Ok(blob) => Ok(Some(
-                blob.chunks_exact(4)
-                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-                    .collect(),
-            )),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
+
 
     // ── Tags ──
 
@@ -508,11 +423,6 @@ impl Database {
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("UPDATE tweets SET resolved_content = ?1, resolved_author = ?2, resolved_url = ?3 WHERE id = ?4", rusqlite::params![content, author, url, tweet_id])?;
-        // Re-embed with resolved content
-        conn.execute(
-            "UPDATE tweets SET embedding = NULL WHERE id = ?1 AND embedding IS NOT NULL",
-            rusqlite::params![tweet_id],
-        )?;
         // Re-enrich short tweets that were skipped — now they have real content
         conn.execute(
             "UPDATE tweets SET ai_enriched_at = NULL, ai_category = NULL, ai_cluster = NULL, ai_summary = NULL, ai_topics = NULL, ai_type = NULL
@@ -613,11 +523,6 @@ impl Database {
             [],
             |r| r.get(0),
         )?;
-        let pending_embedding: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM tweets WHERE embedding IS NULL",
-            [],
-            |r| r.get(0),
-        )?;
         let total_corrections: u32 =
             conn.query_row("SELECT COUNT(*) FROM corrections", [], |r| r.get(0))?;
         let active_patterns: u32 = conn.query_row(
@@ -660,7 +565,6 @@ impl Database {
             total_bookmarks,
             enriched_count,
             pending_enrichment,
-            pending_embedding,
             correction_rate_7d,
             active_patterns,
             total_corrections,
@@ -1635,10 +1539,6 @@ fn map_tweet_row(row: &rusqlite::Row) -> rusqlite::Result<TweetRow> {
     })
 }
 
-fn f32_slice_to_bytes(floats: &[f32]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(floats.as_ptr() as *const u8, floats.len() * 4) }
-}
-
 // ── Structs ──
 
 #[derive(Debug, serde::Serialize, Clone)]
@@ -1693,7 +1593,6 @@ pub struct TweetFull {
     pub ai_summary: Option<String>,
     pub ai_topics: Vec<String>,
     pub ai_type: Option<String>,
-    pub has_embedding: bool,
     pub resolved_content: Option<String>,
     pub resolved_author: Option<String>,
     pub resolved_url: Option<String>,
@@ -1727,7 +1626,6 @@ pub struct DashboardStats {
     pub total_bookmarks: u32,
     pub enriched_count: u32,
     pub pending_enrichment: u32,
-    pub pending_embedding: u32,
     pub correction_rate_7d: f64,
     pub active_patterns: u32,
     pub total_corrections: u32,

@@ -1,20 +1,16 @@
-mod agent;
 mod commands;
 mod config;
 mod db;
-mod embeddings;
 mod twitter;
 mod workers;
 
 use config::AppConfig;
 use db::Database;
-use embeddings::Embedder;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 pub struct AppState {
     pub db: Arc<Database>,
-    pub embedder: Arc<Embedder>,
     pub config: Arc<Mutex<AppConfig>>,
     pub app_dir: std::path::PathBuf,
 }
@@ -41,54 +37,31 @@ pub fn run() {
             let db_path = app_dir.join("connecting-dots.db");
             let db = Database::open(&db_path).expect("failed to open database");
             let db = Arc::new(db);
-            let embedder = Embedder::new().expect("failed to initialize embedding model");
-            let embedder = Arc::new(embedder);
 
             workers::start_all(
                 db.clone(),
-                embedder.clone(),
                 config.api_key().map(String::from),
                 app.handle().clone(),
             );
 
             app.manage(AppState {
                 db,
-                embedder,
                 config: Arc::new(Mutex::new(config)),
                 app_dir: app_dir.clone(),
             });
 
-            log::info!("Connecting Dots V2 started. DB at {:?}", db_path);
+            log::info!("Connecting Dots started. DB at {:?}", db_path);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             // Sync
             commands::sync_bookmarks,
             // Tweets
-            commands::list_tweets,
             commands::search_tweets,
-            commands::search_semantic,
-            commands::get_tweet_count,
-            // Embeddings
-            commands::embed_pending,
             // AI
             commands::reset_enrichments,
             commands::check_api_key,
             commands::set_api_key,
-            // Detail
-            commands::get_tweet_detail,
-            commands::get_thread,
-            // Tags
-            commands::list_tags,
-            commands::create_and_assign_tag,
-            commands::remove_tag_from_tweet,
-            // Agent
-            commands::send_agent_message,
-            // Notes
-            commands::get_tweet_notes,
-            commands::create_tweet_note,
-            commands::update_tweet_note,
-            commands::delete_tweet_note,
             // Dots
             commands::list_dots,
             commands::get_dot_detail,

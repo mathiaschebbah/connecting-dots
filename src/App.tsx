@@ -3,12 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "./stores/appStore";
 import { CortexBar } from "./components/CortexBar";
 import { SettingsModal } from "./components/SettingsModal";
-import { UnifiedSearch } from "./components/UnifiedSearch";
 import { ApiKeyGate } from "./pages/ApiKeyGate";
 import { DotsGrid } from "./pages/DotsGrid";
 import { DotDetail } from "./pages/DotDetail";
-import { TweetPage } from "./pages/TweetPage";
-import { Agent } from "./pages/Agent";
 
 function App() {
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
@@ -24,15 +21,9 @@ function App() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        useAppStore.getState().setSearchOpen(true);
-      }
       if (e.key === "Escape") {
         const state = useAppStore.getState();
-        if (state.searchOpen) {
-          state.setSearchOpen(false);
-        } else if (page.type !== "dots") {
+        if (page.type !== "dots") {
           state.back();
         }
       }
@@ -61,12 +52,6 @@ function App() {
     case "dot":
       content = <DotDetail slug={page.slug} />;
       break;
-    case "tweet":
-      content = <TweetPage tweetId={page.id} fromDot={page.fromDot} />;
-      break;
-    case "agent":
-      content = <Agent />;
-      break;
   }
 
   return (
@@ -77,7 +62,6 @@ function App() {
       <main className="flex-1 overflow-hidden flex flex-col">
         {content}
       </main>
-      <UnifiedSearch />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );

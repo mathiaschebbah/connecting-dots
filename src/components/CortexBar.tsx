@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Search, Settings, ChevronRight, ChevronLeft, X as XIcon } from "lucide-react";
+import { Settings, ChevronRight, ChevronLeft, X as XIcon } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { dotName } from "../lib/utils";
 
@@ -10,7 +10,6 @@ interface SyncEvent { worker: string; status: string; detail: string | null }
 export function CortexBar() {
   const page = useAppStore((s) => s.page);
   const navigate = useAppStore((s) => s.navigate);
-  const setSearchOpen = useAppStore((s) => s.setSearchOpen);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const webviewOpen = useAppStore((s) => s.webviewOpen);
   const setWebviewOpen = useAppStore((s) => s.setWebviewOpen);
@@ -34,25 +33,13 @@ export function CortexBar() {
         <span className="text-[15px] font-bold text-foreground">Connecting Dots</span>
       </button>
 
-      {(page.type === "dot" || page.type === "tweet") && (
+      {page.type === "dot" && (
         <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground min-w-0">
           <ChevronRight size={12} className="shrink-0" />
-          {page.type === "dot" && (
-            <span className="text-foreground font-medium truncate">{dotName(page.slug)}</span>
-          )}
-          {page.type === "tweet" && page.fromDot && (
-            <button
-              onClick={() => navigate({ type: "dot", slug: page.fromDot! })}
-              className="text-foreground hover:underline font-medium truncate"
-              aria-label="Retour au sujet"
-            >
-              {dotName(page.fromDot)}
-            </button>
-          )}
+          <span className="text-foreground font-medium truncate">{dotName(page.slug)}</span>
         </div>
       )}
 
-      {/* Webview navigation — left side, always visible */}
       {webviewOpen && (
         <div className="flex items-center gap-0.5">
           <button onClick={() => invoke("webview_back")} className="p-1.5 text-muted-foreground hover:text-foreground transition-all duration-150 rounded-full hover:bg-white/[0.08] active:scale-90" aria-label="Retour">
@@ -75,10 +62,6 @@ export function CortexBar() {
       )}
 
       <div className="flex-1" />
-
-      <button onClick={() => setSearchOpen(true)} className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-white/[0.08]" aria-label="Rechercher">
-        <Search size={18} />
-      </button>
 
       <button onClick={() => setSettingsOpen(true)} className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-white/[0.08]" aria-label="Parametres">
         <Settings size={18} />
