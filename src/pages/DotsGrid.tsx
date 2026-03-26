@@ -32,7 +32,13 @@ function DotCard({
       className="w-full cursor-pointer rounded-2xl border border-border px-4 py-3.5 text-left hover:bg-white/[0.03]"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-[14px] font-bold leading-tight text-foreground">
+        <span className="flex items-center gap-2 truncate text-[14px] font-bold leading-tight text-foreground">
+          {dot.color && (
+            <span
+              className="inline-block h-2 w-2 shrink-0 rounded-full"
+              style={{ backgroundColor: dot.color }}
+            />
+          )}
           {dot.name}
         </span>
         <span
@@ -50,12 +56,10 @@ function CreateDotCard({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex min-h-[96px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-secondary/50 text-muted-foreground hover:border-[#1d9bf0]/50 hover:text-foreground"
+      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-secondary/50 px-4 py-3.5 text-muted-foreground hover:border-[#1d9bf0]/50 hover:text-foreground"
     >
-      <div className="rounded-full border border-border p-2">
-        <Plus size={16} />
-      </div>
-      <span className="text-[13px] font-medium">Créer un dot</span>
+      <Plus size={14} className="shrink-0" />
+      <span className="text-[13px] font-medium">Nouveau dot</span>
     </button>
   );
 }
@@ -194,7 +198,7 @@ export function DotsGrid() {
     <>
       <div className="flex flex-1 overflow-auto">
         <div className="mx-auto max-w-5xl px-6 pt-4 pb-20">
-          <div className="relative mb-5 max-w-sm transition-all duration-300 ease-out focus-within:max-w-md">
+          <div className="relative mx-auto mb-5 max-w-sm transition-all duration-300 ease-out focus-within:max-w-md">
             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <label htmlFor="search-dots" className="sr-only">
               Rechercher
