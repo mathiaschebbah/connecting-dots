@@ -1,6 +1,6 @@
 [package]
 name = "connecting-dots"
-version = "1.0.1"
+version = "1.0.2"
 description = "A second brain plugged into Twitter/X"
 authors = ["Mathias Chebbah"]
 license = "MIT"
