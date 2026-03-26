@@ -27,7 +27,7 @@ const EXTERNAL_NAV_SCRIPT: &str = r#"
 "#;
 
 /// Extract ct0 + full cookie string from a slice already known to contain "ct0".
-fn extract_stored_cookies(
+pub fn extract_stored_cookies(
     cookies: &[tauri::webview::Cookie<'_>],
 ) -> crate::config::StoredCookies {
     let ct0 = cookies
@@ -45,7 +45,7 @@ fn extract_stored_cookies(
 }
 
 /// Check whether a cookie slice contains a valid X session (ct0 + twid).
-fn has_x_session(cookies: &[tauri::webview::Cookie<'_>]) -> bool {
+pub fn has_x_session(cookies: &[tauri::webview::Cookie<'_>]) -> bool {
     cookies.iter().any(|c| c.name() == "ct0") && cookies.iter().any(|c| c.name() == "twid")
 }
 

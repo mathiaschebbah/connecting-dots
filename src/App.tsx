@@ -7,17 +7,28 @@ import { Toasts } from "./components/Toasts";
 import { ApiKeyGate } from "./pages/ApiKeyGate";
 import { DotsGrid } from "./pages/DotsGrid";
 import { DotDetail } from "./pages/DotDetail";
+import type { XConnection } from "./types";
+
+interface StartupState {
+  hasKey: boolean;
+  xConnected: boolean;
+}
 
 function App() {
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [startup, setStartup] = useState<StartupState | null>(null);
   const page = useAppStore((s) => s.page);
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
 
   useEffect(() => {
-    invoke<boolean>("check_api_key")
-      .then(setHasApiKey)
-      .catch(() => setHasApiKey(false));
+    Promise.all([
+      invoke<boolean>("check_api_key"),
+      invoke<XConnection>("check_x_connection"),
+    ])
+      .then(([hasKey, xConn]) =>
+        setStartup({ hasKey, xConnected: xConn.connected }),
+      )
+      .catch(() => setStartup({ hasKey: false, xConnected: false }));
   }, []);
 
   useEffect(() => {
@@ -33,7 +44,7 @@ function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [page]);
 
-  if (hasApiKey === null) {
+  if (startup === null) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background">
         <div className="w-4 h-4 border-2 border-border border-t-foreground rounded-full animate-spin" />
@@ -41,8 +52,16 @@ function App() {
     );
   }
 
-  if (!hasApiKey) {
-    return <ApiKeyGate onAuthenticated={() => setHasApiKey(true)} />;
+  if (!startup.hasKey || !startup.xConnected) {
+    return (
+      <ApiKeyGate
+        initialHasKey={startup.hasKey}
+        initialXConnected={startup.xConnected}
+        onAuthenticated={() =>
+          setStartup({ hasKey: true, xConnected: true })
+        }
+      />
+    );
   }
 
   let content: React.ReactNode;

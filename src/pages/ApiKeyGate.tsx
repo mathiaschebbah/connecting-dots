@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { Loader2 } from "lucide-react";
 
 interface Props {
+  initialHasKey: boolean;
+  initialXConnected: boolean;
   onAuthenticated: () => void;
 }
 
@@ -13,26 +15,26 @@ interface SyncEvent {
   detail: string | null;
 }
 
-interface XConnection {
-  connected: boolean;
-  browser: string | null;
-}
-
-export function ApiKeyGate({ onAuthenticated }: Props) {
+export function ApiKeyGate({
+  initialHasKey,
+  initialXConnected,
+  onAuthenticated,
+}: Props) {
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  const [xConnected, setXConnected] = useState<boolean | null>(null);
+  const [xConnected, setXConnected] = useState(initialXConnected);
   const [xLoggingIn, setXLoggingIn] = useState(false);
 
-  // Check if already connected (stored cookies or browser)
+  // If both are already satisfied, go straight to sync
   useEffect(() => {
-    invoke<XConnection>("check_x_connection")
-      .then((r) => setXConnected(r.connected))
-      .catch(() => setXConnected(false));
-  }, []);
+    if (xConnected && initialHasKey && !syncing) {
+      setSyncing(true);
+      setSyncStatus("Synchronisation des signets...");
+    }
+  }, [xConnected, initialHasKey, syncing]);
 
   // Listen for webview login events
   useEffect(() => {
@@ -49,7 +51,7 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
     };
   }, []);
 
-  // Listen for sync events
+  // Listen for sync events (poller emits these automatically)
   useEffect(() => {
     if (!syncing) return;
     const unlisten = listen<SyncEvent>("sync:event", (event) => {
@@ -98,8 +100,8 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
 
   return (
     <div
-      className={`flex h-screen bg-background transition-all duration-300 ${
-        xLoggingIn ? "w-[50vw] items-center justify-center" : "w-screen items-center justify-center"
+      className={`flex h-screen items-center justify-center bg-background transition-all duration-300 ${
+        xLoggingIn ? "w-[50vw]" : "w-screen"
       }`}
     >
       <div className="w-full max-w-[380px] px-6">
@@ -129,19 +131,17 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
                   <button
                     type="button"
                     onClick={handleXLogin}
-                    disabled={xLoggingIn || xConnected === null}
+                    disabled={xLoggingIn}
                     className="flex w-full items-center justify-center gap-2 rounded-md bg-foreground px-3 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
                   >
-                    {(xLoggingIn || xConnected === null) && (
+                    {xLoggingIn && (
                       <Loader2 size={13} className="animate-spin" />
                     )}
-                    {xConnected === null
-                      ? "Vérification..."
-                      : xLoggingIn
-                        ? "Connexion en cours..."
-                        : "Se connecter à X"}
+                    {xLoggingIn
+                      ? "Connexion en cours..."
+                      : "Se connecter à X"}
                   </button>
-                  {!xLoggingIn && xConnected === false && (
+                  {!xLoggingIn && (
                     <p className="mt-2 text-center text-[12px] text-muted-foreground">
                       Une fenêtre s'ouvrira pour te connecter à ton compte X.
                     </p>
