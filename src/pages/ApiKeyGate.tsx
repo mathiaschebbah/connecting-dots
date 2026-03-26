@@ -21,13 +21,17 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!syncing) return;
     const unlisten = listen<SyncEvent>("sync:event", (event) => {
       const e = event.payload;
       if (e.worker === "bookmarks" && e.status === "done") {
-        if (e.detail) {
+        if (e.detail && !e.detail.startsWith("error")) {
           setSyncStatus(e.detail);
+          setTimeout(() => onAuthenticated(), 800);
+        } else {
+          // Sync done but no new bookmarks or error — still proceed
+          setTimeout(() => onAuthenticated(), 500);
         }
-        setTimeout(() => onAuthenticated(), 800);
       }
       if (e.worker === "enricher" && e.status === "done") {
         setSyncStatus("Dots organisés");
@@ -36,7 +40,7 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [onAuthenticated]);
+  }, [syncing, onAuthenticated]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

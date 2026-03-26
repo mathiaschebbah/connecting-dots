@@ -79,6 +79,31 @@ pub async fn set_api_key(
     app_handle: tauri::AppHandle,
     api_key: String,
 ) -> Result<bool, String> {
+    // Verify the key with a lightweight API call first
+    let key_clone = api_key.clone();
+    let valid = tokio::task::spawn_blocking(move || {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &key_clone)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .body(r#"{"model":"claude-haiku-4-5-20251001","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"#)
+            .send()
+            .map_err(|e| e.to_string())?;
+        if resp.status() == 401 {
+            return Err("Clé API invalide".to_string());
+        }
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    valid?;
+
     {
         let mut config = state.config.lock().map_err(|_| "config lock error".to_string())?;
         config.anthropic_api_key = Some(api_key.clone());
