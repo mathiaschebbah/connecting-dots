@@ -1,2 +1,2 @@
 pub mod bookmarks_fetcher;
-pub mod clix;
+pub mod types;

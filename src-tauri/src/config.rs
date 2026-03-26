@@ -20,9 +20,11 @@ impl AppConfig {
     }
 
     pub fn save(&self, app_dir: &Path) -> Result<()> {
-        let config_path = app_dir.join("config.json");
+        let path = app_dir.join("config.json");
+        let tmp_path = app_dir.join("config.json.tmp");
         let data = serde_json::to_string_pretty(self)?;
-        std::fs::write(config_path, data)?;
+        std::fs::write(&tmp_path, &data)?;
+        std::fs::rename(&tmp_path, &path)?;
         Ok(())
     }
 

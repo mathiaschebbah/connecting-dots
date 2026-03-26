@@ -1,5 +1,5 @@
 use crate::db::{DashboardStats, Dot, DotDetail};
-use crate::twitter::clix::Clix;
+use crate::twitter::bookmarks_fetcher::BookmarksFetcher;
 use crate::workers;
 use crate::AppState;
 use serde::Serialize;
@@ -15,8 +15,8 @@ pub struct SyncResult {
 
 #[tauri::command]
 pub async fn sync_bookmarks(state: State<'_, AppState>) -> Result<SyncResult, String> {
-    let clix = Clix::new();
-    let tweets = clix.bookmarks(200).map_err(|e| e.to_string())?;
+    let fetcher = BookmarksFetcher::from_clix_config().map_err(|e| e.to_string())?;
+    let tweets = fetcher.fetch_all(50).map_err(|e| e.to_string())?;
     let new_tweets = state
         .db
         .upsert_tweets(&tweets, "bookmark")
@@ -71,6 +71,7 @@ pub async fn set_api_key(
         state.db.clone(),
         Some(api_key),
         app_handle,
+        &state.workers,
     );
     Ok(true)
 }
@@ -190,8 +191,9 @@ pub async fn open_tweet_panel(
     let parsed_url: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
 
     if let Some(existing) = app.get_webview("tweet-panel") {
+        let escaped = serde_json::to_string(&parsed_url.to_string()).map_err(|e| e.to_string())?;
         existing
-            .eval(&format!("window.location.href = '{}';", parsed_url))
+            .eval(&format!("window.location.href = {};", escaped))
             .map_err(|e| e.to_string())?;
         return Ok(true);
     }
@@ -256,6 +258,11 @@ pub async fn webview_forward(app: tauri::AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn open_in_browser(url: String) -> Result<bool, String> {
+    let parsed = url::Url::parse(&url).map_err(|e| e.to_string())?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return Err("Only http/https URLs are allowed".into()),
+    }
     open::that(&url).map_err(|e| e.to_string())?;
     Ok(true)
 }

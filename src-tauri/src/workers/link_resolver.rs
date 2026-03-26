@@ -1,5 +1,6 @@
 use crate::db::Database;
-use crate::twitter::clix::Clix;
+use crate::twitter::bookmarks_fetcher::BookmarksFetcher;
+use crate::twitter::types::TweetDetail;
 use crate::workers::SyncEvent;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -164,63 +165,45 @@ async fn resolve_batch(db: &Database) -> anyhow::Result<u32> {
     }
     let resolved_urls: Vec<(String, String)> = futures::future::join_all(url_futures).await;
 
-    // Phase 2: Fetch content in parallel (max 5 concurrent via semaphore)
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-    let clix = Clix::new();
-
-    let mut handles = Vec::new();
-    for (tweet_id, resolved_url) in resolved_urls {
-        let sem = semaphore.clone();
-        let clix_clone = clix.clone_command();
-        let url = resolved_url.clone();
-        let tid = tweet_id.clone();
-
-        handles.push(tokio::spawn(async move {
-            let _permit = sem.acquire().await;
-            resolve_one(clix_clone, tid, url).await
-        }));
-    }
-
+    // Phase 2: Fetch tweet details sequentially (rate-limit friendly)
     let mut count = 0u32;
-    let results: Vec<_> = futures::future::join_all(handles).await;
-    for result in results {
-        match result {
-            Ok(Ok(Some((tweet_id, resolved_text, author, url, upsert_tweet)))) => {
+
+    for (tweet_id, resolved_url) in resolved_urls {
+        match resolve_one(&tweet_id, &resolved_url).await {
+            Ok(Some((resolved_text, author, url, upsert_tweet))) => {
                 db.store_resolved_content(&tweet_id, &resolved_text, author.as_deref(), &url)?;
                 if let Some(tweet) = upsert_tweet {
                     let _ = db.upsert_tweets(&[tweet], "resolved");
                 }
                 count += 1;
             }
-            Ok(Ok(None)) => {} // no result
-            Ok(Err(e)) => log::warn!("[resolver] error: {}", e),
-            Err(e) => log::warn!("[resolver] task panic: {}", e),
+            Ok(None) => {}
+            Err(e) => log::warn!("[resolver] error for {}: {}", tweet_id, e),
         }
     }
 
     Ok(count)
 }
 
-/// Resolve a single tweet link — runs inside a tokio task
+/// Resolve a single tweet link
 async fn resolve_one(
-    clix: Clix,
-    tweet_id: String,
-    resolved_url: String,
-) -> anyhow::Result<
-    Option<(
-        String,
-        String,
-        Option<String>,
-        String,
-        Option<crate::twitter::clix::ClixTweet>,
-    )>,
-> {
-    // Try clix tweet_detail first
-    let detail_id = extract_tweet_id(&resolved_url).unwrap_or_else(|| tweet_id.clone());
+    tweet_id: &str,
+    resolved_url: &str,
+) -> anyhow::Result<Option<(String, Option<String>, String, Option<crate::twitter::types::Tweet>)>>
+{
+    // Try native tweet_detail first
+    let detail_id = extract_tweet_id(resolved_url).unwrap_or_else(|| tweet_id.to_string());
     let detail_id2 = detail_id.clone();
 
-    match tokio::task::spawn_blocking(move || clix.tweet_detail(&detail_id2)).await {
-        Ok(Ok(detail)) => {
+    let detail_result: Result<TweetDetail, _> =
+        tokio::task::spawn_blocking(move || {
+            let fetcher = BookmarksFetcher::from_clix_config()?;
+            fetcher.fetch_tweet_detail(&detail_id2)
+        })
+        .await?;
+
+    match detail_result {
+        Ok(detail) => {
             let mut resolved_text = detail.tweet.text.clone();
             if let Some(article) = &detail.article {
                 if let Some(title) = &article.title {
@@ -237,45 +220,41 @@ async fn resolve_one(
                 .clone()
                 .unwrap_or_else(|| format!("https://x.com/{}/status/{}", author, detail_id));
             return Ok(Some((
-                tweet_id,
                 resolved_text,
                 Some(author),
                 url,
                 Some(detail.tweet),
             )));
         }
-        Ok(Err(e)) => log::warn!("[resolver] clix failed for {}: {}", detail_id, e),
-        Err(e) => log::warn!("[resolver] task failed for {}: {}", detail_id, e),
+        Err(e) => log::warn!("[resolver] tweet_detail failed for {}: {}", detail_id, e),
     }
 
     // Fallback: HTTP scraping
-    if extract_article_id(&resolved_url).is_some() {
-        if let Some((title, body)) = fetch_x_article(&resolved_url).await {
+    if extract_article_id(resolved_url).is_some() {
+        if let Some((title, body)) = fetch_x_article(resolved_url).await {
             let text = if body.is_empty() {
                 format!("{}\n\n{}", title, resolved_url)
             } else {
                 format!("{}\n\n{}", title, body)
             };
-            return Ok(Some((tweet_id, text, None, resolved_url, None)));
+            return Ok(Some((text, None, resolved_url.to_string(), None)));
         }
     }
 
     // External URL
-    if let Some(title) = fetch_page_title(&resolved_url).await {
+    if let Some(title) = fetch_page_title(resolved_url).await {
         return Ok(Some((
-            tweet_id,
             format!("{}\n\n{}", title, resolved_url),
             None,
-            resolved_url,
+            resolved_url.to_string(),
             None,
         )));
     }
 
     Ok(Some((
-        tweet_id,
-        resolved_url.clone(),
+        resolved_url.to_string(),
         None,
-        resolved_url,
+        resolved_url.to_string(),
         None,
     )))
 }

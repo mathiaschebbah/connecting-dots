@@ -8,29 +8,45 @@ use config::AppConfig;
 use db::Database;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
+use workers::WorkerHandles;
 
 pub struct AppState {
     pub db: Arc<Database>,
     pub config: Arc<Mutex<AppConfig>>,
     pub app_dir: std::path::PathBuf,
+    pub workers: Arc<WorkerHandles>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            let log_level = if cfg!(debug_assertions) {
+                log::LevelFilter::Info
+            } else {
+                log::LevelFilter::Warn
+            };
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log_level)
+                    .build(),
+            )?;
 
-            let app_dir = app
-                .path()
-                .app_data_dir()
-                .expect("failed to resolve app data dir");
+            let is_sandbox = std::env::var("CONNECTING_DOTS_DEV").is_ok();
+            let app_dir = if is_sandbox {
+                let dir = app
+                    .path()
+                    .app_data_dir()
+                    .expect("failed to resolve app data dir")
+                    .join("dev-sandbox");
+                log::info!("DEV MODE: using sandbox at {:?}", dir);
+                dir
+            } else {
+                app
+                    .path()
+                    .app_data_dir()
+                    .expect("failed to resolve app data dir")
+            };
             std::fs::create_dir_all(&app_dir)?;
 
             let config = AppConfig::load(&app_dir).unwrap_or_default();
@@ -38,16 +54,19 @@ pub fn run() {
             let db = Database::open(&db_path).expect("failed to open database");
             let db = Arc::new(db);
 
+            let worker_handles = Arc::new(WorkerHandles::new());
             workers::start_all(
                 db.clone(),
                 config.api_key().map(String::from),
                 app.handle().clone(),
+                &worker_handles,
             );
 
             app.manage(AppState {
                 db,
                 config: Arc::new(Mutex::new(config)),
                 app_dir: app_dir.clone(),
+                workers: worker_handles,
             });
 
             log::info!("Connecting Dots started. DB at {:?}", db_path);
@@ -81,6 +100,17 @@ pub fn run() {
             commands::webview_forward,
             commands::open_in_browser,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if std::env::var("CONNECTING_DOTS_DEV").is_ok() {
+                    if let Ok(dir) = app.path().app_data_dir() {
+                        let sandbox = dir.join("dev-sandbox");
+                        let _ = std::fs::remove_dir_all(&sandbox);
+                        log::info!("DEV MODE: cleaned up sandbox");
+                    }
+                }
+            }
+        });
 }

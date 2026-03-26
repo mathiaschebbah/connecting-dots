@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS tweets (
     bookmark_order INTEGER,
     fetched_at TEXT NOT NULL,
     raw_json TEXT,
-    embedding BLOB,
     ai_category TEXT,
     ai_cluster TEXT,
     ai_summary TEXT,

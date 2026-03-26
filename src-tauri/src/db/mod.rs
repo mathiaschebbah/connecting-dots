@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::twitter::clix::ClixTweet;
+use crate::twitter::types::Tweet as ClixTweet;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -50,9 +50,44 @@ impl Database {
 
     fn migrate(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+
+        // Create tables if they don't exist (first install)
         let schema = include_str!("schema.sql");
         conn.execute_batch(schema)?;
         conn.execute_batch(LEARNING_SCHEMA)?;
+
+        // Get current schema version
+        let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+
+        // Run incremental migrations
+        if version < 1 {
+            // v1: Add columns that may be missing from older installs.
+            // ALTER TABLE ADD COLUMN errors out if the column already exists,
+            // so we silently ignore those errors.
+            let alter_statements = [
+                "ALTER TABLE tweets ADD COLUMN author_avatar TEXT",
+                "ALTER TABLE tweets ADD COLUMN resolved_content TEXT",
+                "ALTER TABLE tweets ADD COLUMN resolved_author TEXT",
+                "ALTER TABLE tweets ADD COLUMN resolved_url TEXT",
+                "ALTER TABLE tweets ADD COLUMN bookmark_order INTEGER",
+                "ALTER TABLE tweets ADD COLUMN media_json TEXT",
+                "ALTER TABLE tweets ADD COLUMN quoted_tweet_json TEXT",
+                "ALTER TABLE tweets ADD COLUMN ai_category TEXT",
+                "ALTER TABLE tweets ADD COLUMN ai_cluster TEXT",
+                "ALTER TABLE tweets ADD COLUMN ai_summary TEXT",
+                "ALTER TABLE tweets ADD COLUMN ai_topics TEXT",
+                "ALTER TABLE tweets ADD COLUMN ai_type TEXT",
+                "ALTER TABLE tweets ADD COLUMN ai_enriched_at TEXT",
+            ];
+            for stmt in &alter_statements {
+                // Ignore "duplicate column" errors — column may already exist
+                let _ = conn.execute(stmt, []);
+            }
+        }
+
+        // Bump to the current version
+        conn.execute_batch("PRAGMA user_version = 1")?;
+
         Ok(())
     }
 
@@ -558,15 +593,16 @@ impl Database {
 
     /// Merge dot `from_slug` into `into_slug`: move all tweets, delete the old dot
     pub fn merge_dots(&self, from_slug: &str, into_slug: &str) -> Result<u32> {
-        let conn = self.conn.lock().unwrap();
-        let from_id: i64 = conn
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let from_id: i64 = tx
             .query_row(
                 "SELECT id FROM dots WHERE slug = ?1",
                 rusqlite::params![from_slug],
                 |r| r.get(0),
             )
             .map_err(|_| anyhow::anyhow!("Dot '{}' not found", from_slug))?;
-        let into_id: i64 = conn
+        let into_id: i64 = tx
             .query_row(
                 "SELECT id FROM dots WHERE slug = ?1",
                 rusqlite::params![into_slug],
@@ -575,30 +611,31 @@ impl Database {
             .map_err(|_| anyhow::anyhow!("Dot '{}' not found", into_slug))?;
 
         // Move tweets (ignore duplicates)
-        let moved = conn.execute(
+        let moved = tx.execute(
             "INSERT OR IGNORE INTO tweet_dots (tweet_id, dot_id) SELECT tweet_id, ?1 FROM tweet_dots WHERE dot_id = ?2",
             rusqlite::params![into_id, from_id],
         )?;
         // Update ai_cluster on moved tweets
-        conn.execute("UPDATE tweets SET ai_cluster = ?1 WHERE id IN (SELECT tweet_id FROM tweet_dots WHERE dot_id = ?2)", rusqlite::params![into_slug, from_id])?;
-        conn.execute(
+        tx.execute("UPDATE tweets SET ai_cluster = ?1 WHERE id IN (SELECT tweet_id FROM tweet_dots WHERE dot_id = ?2)", rusqlite::params![into_slug, from_id])?;
+        tx.execute(
             "UPDATE corrections SET from_dot_slug = ?1 WHERE from_dot_slug = ?2",
             rusqlite::params![into_slug, from_slug],
         )?;
-        conn.execute(
+        tx.execute(
             "UPDATE corrections SET to_dot_slug = ?1 WHERE to_dot_slug = ?2",
             rusqlite::params![into_slug, from_slug],
         )?;
         // Delete old assignments and dot
-        conn.execute(
+        tx.execute(
             "DELETE FROM tweet_dots WHERE dot_id = ?1",
             rusqlite::params![from_id],
         )?;
-        conn.execute(
+        tx.execute(
             "UPDATE dots SET parent_id = ?1 WHERE parent_id = ?2",
             rusqlite::params![into_id, from_id],
         )?;
-        conn.execute("DELETE FROM dots WHERE id = ?1", rusqlite::params![from_id])?;
+        tx.execute("DELETE FROM dots WHERE id = ?1", rusqlite::params![from_id])?;
+        tx.commit()?;
 
         log::info!(
             "[db] Merged dot '{}' into '{}' ({} tweets moved)",
