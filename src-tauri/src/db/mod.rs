@@ -49,7 +49,7 @@ impl Database {
     }
 
     fn migrate(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
 
         // Create tables if they don't exist (first install)
         let schema = include_str!("schema.sql");
@@ -94,7 +94,7 @@ impl Database {
     // ── Insert / Update ──
 
     pub fn upsert_tweets(&self, tweets: &[ClixTweet], source: &str) -> Result<u32> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let now = chrono::Utc::now().to_rfc3339();
         let mut count = 0u32;
 
@@ -176,7 +176,7 @@ impl Database {
     }
 
     pub fn set_bookmark_order(&self, tweet_ids: &[String]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare_cached(
             "UPDATE tweets SET bookmark_order = ?1 WHERE id = ?2 AND source = 'bookmark'",
         )?;
@@ -193,7 +193,7 @@ impl Database {
     // ── Search ──
 
     pub fn tweet_count(&self) -> Result<u32> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         Ok(conn.query_row("SELECT COUNT(*) FROM tweets", [], |row| row.get(0))?)
     }
 
@@ -203,7 +203,7 @@ impl Database {
         limit: u32,
         source_filter: Option<&str>,
     ) -> Result<Vec<TweetRow>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let sql = if source_filter.is_some() {
             "SELECT t.id, t.author_handle, t.author_name, COALESCE(t.resolved_content, t.content), t.created_at,
                     t.tweet_url, t.likes, t.retweets, t.replies_count, t.views, t.source, t.ai_category, t.ai_cluster, t.ai_summary, t.ai_type, t.ai_topics,
@@ -236,7 +236,7 @@ impl Database {
     // ── AI Metadata ──
 
     pub fn tweets_without_ai_metadata(&self, limit: u32) -> Result<Vec<(String, String)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // Skip short link-only tweets that haven't been resolved yet.
         // Tweets with substantial text (>= 200 chars) are enriched even if they contain a link.
         let mut stmt = conn.prepare(
@@ -261,7 +261,7 @@ impl Database {
     }
 
     pub fn reset_all_enrichments(&self) -> Result<u32> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let count: u32 = conn.query_row(
             "SELECT COUNT(*) FROM tweets WHERE ai_enriched_at IS NOT NULL",
             [],
@@ -280,7 +280,7 @@ impl Database {
         topics: &str,
         tweet_type: &str,
     ) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE tweets SET ai_category = ?1, ai_cluster = ?2, ai_summary = ?3, ai_topics = ?4, ai_type = ?5, ai_enriched_at = ?6 WHERE id = ?7",
@@ -296,7 +296,7 @@ impl Database {
         author: Option<&str>,
         url: &str,
     ) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute("UPDATE tweets SET resolved_content = ?1, resolved_author = ?2, resolved_url = ?3 WHERE id = ?4", rusqlite::params![content, author, url, tweet_id])?;
         // Re-enrich short tweets that were skipped — now they have real content
         conn.execute(
@@ -308,7 +308,7 @@ impl Database {
     }
 
     pub fn tweets_with_unresolved_links(&self, limit: u32) -> Result<Vec<(String, String)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare(
             "SELECT id, content FROM tweets WHERE resolved_content IS NULL
              AND (content LIKE '%x.com/%/status/%' OR content LIKE '%twitter.com/%/status/%' OR content LIKE '%x.com/i/article/%' OR content LIKE '%t.co/%')
@@ -327,7 +327,7 @@ impl Database {
     // ── Dashboard ──
 
     pub fn get_dashboard_stats(&self) -> Result<DashboardStats> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let total_tweets: u32 = conn.query_row("SELECT COUNT(*) FROM tweets", [], |r| r.get(0))?;
         let total_bookmarks: u32 = conn.query_row(
             "SELECT COUNT(*) FROM tweets WHERE source = 'bookmark'",
@@ -398,7 +398,7 @@ impl Database {
 
     /// Get existing dot slugs for the enricher prompt (lightweight, no counts)
     pub fn list_dot_slugs(&self) -> Result<Vec<(String, String)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare("SELECT slug, name FROM dots ORDER BY slug")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -412,7 +412,7 @@ impl Database {
 
     /// Search tweets by keyword and return the dots that contain matching tweets, with match counts
     pub fn search_dots_by_content(&self, query: &str, limit: u32) -> Result<Vec<Dot>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let like_pattern = format!("%{}%", query);
         let mut stmt = conn.prepare(
             "SELECT d.id, d.name, d.slug, d.parent_id, d.description, d.color, d.created_at,
@@ -451,7 +451,7 @@ impl Database {
     }
 
     pub fn list_dots(&self) -> Result<Vec<Dot>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare(
             "SELECT d.id, d.name, d.slug, d.parent_id, d.description, d.color, d.created_at,
                     (SELECT COUNT(*) FROM tweet_dots td JOIN tweets t ON td.tweet_id = t.id WHERE td.dot_id = d.id AND t.source = 'bookmark') as bookmark_count
@@ -481,7 +481,7 @@ impl Database {
     }
 
     pub fn get_dot_detail(&self, slug: &str, limit: u32, offset: u32) -> Result<Option<DotDetail>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
 
         let dot_result = conn.query_row(
             "SELECT d.id, d.name, d.slug, d.parent_id, d.description, d.color, d.created_at,
@@ -547,7 +547,7 @@ impl Database {
     }
 
     pub fn create_dot(&self, name: &str, slug: &str, color: Option<&str>) -> Result<i64> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let tx = conn.transaction()?;
         let now = chrono::Utc::now().to_rfc3339();
         tx.execute(
@@ -561,7 +561,7 @@ impl Database {
     }
 
     pub fn get_or_create_dot(&self, slug: &str, name: &str, color: Option<&str>) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let existing: Result<i64, _> = conn.query_row(
             "SELECT id FROM dots WHERE slug = ?1",
             rusqlite::params![slug],
@@ -593,7 +593,7 @@ impl Database {
 
     /// Merge dot `from_slug` into `into_slug`: move all tweets, delete the old dot
     pub fn merge_dots(&self, from_slug: &str, into_slug: &str) -> Result<u32> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let tx = conn.transaction()?;
         let from_id: i64 = tx
             .query_row(
@@ -648,7 +648,7 @@ impl Database {
 
     /// Rename a dot
     pub fn rename_dot(&self, slug: &str, new_name: &str, new_slug: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute(
             "UPDATE dots SET name = ?1, slug = ?2 WHERE slug = ?3",
             rusqlite::params![new_name.trim(), new_slug.trim(), slug],
@@ -675,7 +675,7 @@ impl Database {
         new_slug: &str,
         reason: Option<&str>,
     ) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let tx = conn.transaction()?;
         tx.execute(
             "UPDATE dots SET name = ?1, slug = ?2 WHERE slug = ?3",
@@ -719,7 +719,7 @@ impl Database {
             return Ok(());
         }
 
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let tx = conn.transaction()?;
         let from_dot_id: i64 = tx
             .query_row(
@@ -761,7 +761,7 @@ impl Database {
     }
 
     pub fn delete_dot(&self, slug: &str) -> Result<u32> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let tx = conn.transaction()?;
         let dot_id: i64 = tx
             .query_row(
@@ -838,7 +838,7 @@ impl Database {
     }
 
     pub fn corrections_for_prompt(&self, limit: u32) -> Result<Vec<CorrectionForPrompt>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let pattern_limit = limit.min(20);
         let mut items = Vec::new();
 
@@ -910,7 +910,7 @@ impl Database {
         &self,
         min_cluster_size: usize,
     ) -> Result<Vec<CorrectionPatternCandidate>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare(
             "SELECT id, from_dot_slug, to_dot_slug, tweet_summary, tweet_topics, reason
              FROM corrections
@@ -980,7 +980,7 @@ impl Database {
             ));
         }
 
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let tx = conn.transaction()?;
         let now = chrono::Utc::now().to_rfc3339();
         tx.execute(
@@ -1012,7 +1012,7 @@ impl Database {
             return Ok(());
         }
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare(
             "SELECT cp.id, cp.effectiveness, c.from_dot_slug, c.to_dot_slug, c.tweet_topics
              FROM correction_patterns cp
@@ -1092,7 +1092,7 @@ impl Database {
     }
 
     pub fn retire_stale_patterns(&self) -> Result<u32> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let now = chrono::Utc::now().to_rfc3339();
         let retired = conn.execute(
             "UPDATE correction_patterns
@@ -1107,7 +1107,7 @@ impl Database {
 
     /// Get dots with sample tweet content for consolidation
     pub fn dots_for_consolidation(&self) -> Result<Vec<(String, String, u32, String)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare(
             "SELECT d.slug, d.name,
                     (SELECT COUNT(*) FROM tweet_dots td WHERE td.dot_id = d.id) as cnt,
@@ -1132,7 +1132,7 @@ impl Database {
     }
 
     pub fn assign_tweet_to_dot(&self, tweet_id: &str, dot_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute(
             "INSERT OR IGNORE INTO tweet_dots (tweet_id, dot_id) VALUES (?1, ?2)",
             rusqlite::params![tweet_id, dot_id],
@@ -1141,7 +1141,7 @@ impl Database {
     }
 
     pub fn backfill_dots(&self) -> Result<u32> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let now = chrono::Utc::now().to_rfc3339();
 
         let cat_colors = std::collections::HashMap::from([

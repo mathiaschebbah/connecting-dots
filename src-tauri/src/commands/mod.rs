@@ -94,7 +94,9 @@ pub async fn check_x_connection(
                     .lock()
                     .map_err(|_| "config lock error".to_string())?;
                 config.x_cookies = Some(stored);
-                let _ = config.save(&state.app_dir);
+                if let Err(e) = config.save(&state.app_dir) {
+                    log::error!("Failed to persist X cookies: {}", e);
+                }
 
                 return Ok(XConnection {
                     connected: true,
@@ -457,9 +459,11 @@ pub async fn open_x_login(
                         );
 
                         {
-                            let mut cfg = config.lock().unwrap();
+                            let mut cfg = config.lock().unwrap_or_else(|p| p.into_inner());
                             cfg.x_cookies = Some(stored);
-                            let _ = cfg.save(&app_dir);
+                            if let Err(e) = cfg.save(&app_dir) {
+                                log::error!("Failed to persist X cookies: {}", e);
+                            }
                         }
 
                         let _ = app_handle.emit("x-login-success", ());

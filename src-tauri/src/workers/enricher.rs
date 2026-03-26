@@ -263,9 +263,13 @@ Réponds UNIQUEMENT avec le tableau JSON, sans fences markdown."#,
             };
 
             if let Ok(dot_id) = db.get_or_create_dot(&slug, &name, color) {
-                let _ = db.assign_tweet_to_dot(&enrichment.id, dot_id);
+                if let Err(e) = db.assign_tweet_to_dot(&enrichment.id, dot_id) {
+                    log::warn!("[enricher] assign_tweet_to_dot failed for {}: {}", enrichment.id, e);
+                }
             }
-            let _ = db.check_pattern_effectiveness(&slug, &enrichment.topics);
+            if let Err(e) = db.check_pattern_effectiveness(&slug, &enrichment.topics) {
+                log::warn!("[enricher] check_pattern_effectiveness failed for {}: {}", slug, e);
+            }
         }
         count += 1;
     }
