@@ -56,10 +56,6 @@ impl Database {
         Ok(())
     }
 
-    pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap()
-    }
-
     // ── Insert / Update ──
 
     pub fn upsert_tweets(&self, tweets: &[ClixTweet], source: &str) -> Result<u32> {
@@ -166,33 +162,6 @@ impl Database {
         Ok(conn.query_row("SELECT COUNT(*) FROM tweets", [], |row| row.get(0))?)
     }
 
-    pub fn list_tweets(
-        &self,
-        limit: u32,
-        offset: u32,
-        source_filter: Option<&str>,
-    ) -> Result<Vec<TweetRow>> {
-        let conn = self.conn.lock().unwrap();
-        let query = if source_filter == Some("bookmark") {
-            "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
-                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
-                    (media_json IS NOT NULL AND media_json != '[]') as has_media, author_avatar
-             FROM tweets WHERE source = 'bookmark' ORDER BY bookmark_order ASC LIMIT ?1 OFFSET ?2"
-        } else {
-            "SELECT id, author_handle, author_name, COALESCE(resolved_content, content), created_at,
-                    tweet_url, likes, retweets, replies_count, views, source, ai_category, ai_cluster, ai_summary, ai_type, ai_topics,
-                    (media_json IS NOT NULL AND media_json != '[]') as has_media, author_avatar
-             FROM tweets ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
-        };
-        let mut stmt = conn.prepare(query)?;
-        let rows = stmt.query_map(rusqlite::params![limit, offset], map_tweet_row)?;
-        let mut tweets = Vec::new();
-        for row in rows {
-            tweets.push(row?);
-        }
-        Ok(tweets)
-    }
-
     pub fn search_fulltext(
         &self,
         query: &str,
@@ -227,135 +196,6 @@ impl Database {
             }
         }
         Ok(tweets)
-    }
-
-    // ── Tweet Detail ──
-
-    pub fn get_tweet_full(&self, tweet_id: &str) -> Result<Option<TweetFull>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, author_id, author_handle, author_name, author_verified,
-                    content, created_at, conversation_id, language, tweet_url,
-                    reply_to_id, reply_to_handle, is_retweet, retweeted_by,
-                    media_json, quoted_tweet_json,
-                    likes, retweets, replies_count, quotes, bookmarks_count, views,
-                    source, ai_category, ai_cluster, ai_summary, ai_topics, ai_type,
-                    resolved_content, resolved_author, resolved_url
-             FROM tweets WHERE id = ?1",
-        )?;
-        let result = stmt.query_row(rusqlite::params![tweet_id], |row| {
-            let topics_raw: Option<String> = row.get(26)?;
-            let topics: Vec<String> = topics_raw
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .unwrap_or_default();
-            Ok(TweetFull {
-                id: row.get(0)?,
-                author_id: row.get(1)?,
-                author_handle: row.get(2)?,
-                author_name: row.get(3)?,
-                author_verified: row.get::<_, i32>(4)? != 0,
-                content: row.get(5)?,
-                created_at: row.get(6)?,
-                conversation_id: row.get(7)?,
-                language: row.get(8)?,
-                tweet_url: row.get(9)?,
-                reply_to_id: row.get(10)?,
-                reply_to_handle: row.get(11)?,
-                is_retweet: row.get::<_, i32>(12)? != 0,
-                retweeted_by: row.get(13)?,
-                media_json: row.get(14)?,
-                quoted_tweet_json: row.get(15)?,
-                likes: row.get(16)?,
-                retweets: row.get(17)?,
-                replies_count: row.get(18)?,
-                quotes: row.get(19)?,
-                bookmarks_count: row.get(20)?,
-                views: row.get(21)?,
-                source: row.get(22)?,
-                ai_category: row.get(23)?,
-                ai_cluster: row.get(24)?,
-                ai_summary: row.get(25)?,
-                ai_topics: topics,
-                ai_type: row.get(27)?,
-                resolved_content: row.get(28)?,
-                resolved_author: row.get(29)?,
-                resolved_url: row.get(30)?,
-            })
-        });
-        match result {
-            Ok(t) => Ok(Some(t)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-
-
-    // ── Tags ──
-
-    pub fn list_tags(&self) -> Result<Vec<Tag>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, name, color FROM tags ORDER BY name")?;
-        let rows = stmt.query_map([], |row| {
-            Ok(Tag {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                color: row.get(2)?,
-            })
-        })?;
-        let mut tags = Vec::new();
-        for row in rows {
-            tags.push(row?);
-        }
-        Ok(tags)
-    }
-
-    pub fn create_tag(&self, name: &str, color: Option<&str>) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT OR IGNORE INTO tags (name, color) VALUES (?1, ?2)",
-            rusqlite::params![name, color],
-        )?;
-        Ok(conn.query_row(
-            "SELECT id FROM tags WHERE name = ?1",
-            rusqlite::params![name],
-            |row| row.get(0),
-        )?)
-    }
-
-    pub fn tag_tweet(&self, tweet_id: &str, tag_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT OR IGNORE INTO tweet_tags (tweet_id, tag_id) VALUES (?1, ?2)",
-            rusqlite::params![tweet_id, tag_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn untag_tweet(&self, tweet_id: &str, tag_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "DELETE FROM tweet_tags WHERE tweet_id = ?1 AND tag_id = ?2",
-            rusqlite::params![tweet_id, tag_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn get_tweet_tags(&self, tweet_id: &str) -> Result<Vec<Tag>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT t.id, t.name, t.color FROM tags t JOIN tweet_tags tt ON t.id = tt.tag_id WHERE tt.tweet_id = ?1 ORDER BY t.name")?;
-        let rows = stmt.query_map(rusqlite::params![tweet_id], |row| {
-            Ok(Tag {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                color: row.get(2)?,
-            })
-        })?;
-        let mut tags = Vec::new();
-        for row in rows {
-            tags.push(row?);
-        }
-        Ok(tags)
     }
 
     // ── AI Metadata ──
@@ -449,60 +289,6 @@ impl Database {
         Ok(results)
     }
 
-    // ── Notes ──
-
-    pub fn get_tweet_notes(&self, tweet_id: &str) -> Result<Vec<TweetNote>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, tweet_id, content, created_at, updated_at FROM tweet_notes WHERE tweet_id = ?1 ORDER BY created_at DESC")?;
-        let rows = stmt.query_map(rusqlite::params![tweet_id], |row| {
-            Ok(TweetNote {
-                id: row.get(0)?,
-                tweet_id: row.get(1)?,
-                content: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?;
-        let mut notes = Vec::new();
-        for row in rows {
-            notes.push(row?);
-        }
-        Ok(notes)
-    }
-
-    pub fn create_tweet_note(&self, tweet_id: &str, content: &str) -> Result<TweetNote> {
-        let conn = self.conn.lock().unwrap();
-        let now = chrono::Utc::now().to_rfc3339();
-        conn.execute("INSERT INTO tweet_notes (tweet_id, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)", rusqlite::params![tweet_id, content, now, now])?;
-        let id = conn.last_insert_rowid();
-        Ok(TweetNote {
-            id,
-            tweet_id: tweet_id.to_string(),
-            content: content.to_string(),
-            created_at: now.clone(),
-            updated_at: now,
-        })
-    }
-
-    pub fn update_tweet_note(&self, note_id: i64, content: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        let now = chrono::Utc::now().to_rfc3339();
-        conn.execute(
-            "UPDATE tweet_notes SET content = ?1, updated_at = ?2 WHERE id = ?3",
-            rusqlite::params![content, now, note_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn delete_tweet_note(&self, note_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "DELETE FROM tweet_notes WHERE id = ?1",
-            rusqlite::params![note_id],
-        )?;
-        Ok(())
-    }
-
     // ── Dashboard ──
 
     pub fn get_dashboard_stats(&self) -> Result<DashboardStats> {
@@ -571,11 +357,6 @@ impl Database {
             confusion_pairs,
             categories,
         })
-    }
-
-    pub fn confusion_pairs(&self, limit: u32) -> Result<Vec<ConfusionPair>> {
-        let conn = self.conn.lock().unwrap();
-        Ok(query_confusion_pairs(&conn, limit)?)
     }
 
     // ── Dots ──
@@ -1088,18 +869,6 @@ impl Database {
         Ok(items)
     }
 
-    pub fn log_correction(
-        &self,
-        action: &str,
-        tweet_id: Option<&str>,
-        from_slug: Option<&str>,
-        to_slug: Option<&str>,
-        reason: Option<&str>,
-    ) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
-        insert_correction(&conn, action, tweet_id, from_slug, to_slug, reason)
-    }
-
     pub fn correction_pattern_candidates(
         &self,
         min_cluster_size: usize,
@@ -1561,57 +1330,6 @@ pub struct TweetRow {
     pub ai_topics: Vec<String>,
     pub has_media: bool,
     pub author_avatar: Option<String>,
-}
-
-#[derive(Debug, serde::Serialize, Clone)]
-pub struct TweetFull {
-    pub id: String,
-    pub author_id: Option<String>,
-    pub author_handle: String,
-    pub author_name: Option<String>,
-    pub author_verified: bool,
-    pub content: String,
-    pub created_at: Option<String>,
-    pub conversation_id: Option<String>,
-    pub language: Option<String>,
-    pub tweet_url: Option<String>,
-    pub reply_to_id: Option<String>,
-    pub reply_to_handle: Option<String>,
-    pub is_retweet: bool,
-    pub retweeted_by: Option<String>,
-    pub media_json: Option<String>,
-    pub quoted_tweet_json: Option<String>,
-    pub likes: i64,
-    pub retweets: i64,
-    pub replies_count: i64,
-    pub quotes: i64,
-    pub bookmarks_count: i64,
-    pub views: i64,
-    pub source: String,
-    pub ai_category: Option<String>,
-    pub ai_cluster: Option<String>,
-    pub ai_summary: Option<String>,
-    pub ai_topics: Vec<String>,
-    pub ai_type: Option<String>,
-    pub resolved_content: Option<String>,
-    pub resolved_author: Option<String>,
-    pub resolved_url: Option<String>,
-}
-
-#[derive(Debug, serde::Serialize, Clone)]
-pub struct Tag {
-    pub id: i64,
-    pub name: String,
-    pub color: Option<String>,
-}
-
-#[derive(Debug, serde::Serialize, Clone)]
-pub struct TweetNote {
-    pub id: i64,
-    pub tweet_id: String,
-    pub content: String,
-    pub created_at: String,
-    pub updated_at: String,
 }
 
 #[derive(Debug, serde::Serialize, Clone)]

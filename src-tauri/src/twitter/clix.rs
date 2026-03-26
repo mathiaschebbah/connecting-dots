@@ -157,17 +157,4 @@ impl Clix {
         }
     }
 
-    pub fn tweet_thread(&self, tweet_id: &str) -> Result<Vec<ClixTweet>> {
-        let raw = self.run(&["tweet", "--thread", "--json", tweet_id])?;
-        let tweets: Vec<ClixTweet> = serde_json::from_value(raw)?;
-        Ok(tweets)
-    }
-
-    // ── Search ──
-
-    pub fn search(&self, query: &str, count: u32) -> Result<Vec<ClixTweet>> {
-        let raw = self.run(&["search", "--json", "--count", &count.to_string(), query])?;
-        let tweets: Vec<ClixTweet> = serde_json::from_value(raw)?;
-        Ok(tweets)
-    }
 }

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Loader2, Plus, Search } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
+import { slugify } from "../lib/utils";
 
 interface Dot {
   id: number;
@@ -11,21 +12,9 @@ interface Dot {
   parent_id: number | null;
   description: string | null;
   color: string | null;
-  icon: string | null;
   created_at: string;
-  tweet_count: number;
   bookmark_count: number;
   children: Dot[];
-}
-
-function slugify(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function DotCard({

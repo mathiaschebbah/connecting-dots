@@ -38,8 +38,6 @@ export function SettingsModal({ open, onClose }: Props) {
     }
   }, [open]);
 
-  if (!open) return null;
-
   const saveKey = async () => {
     if (!newKey.trim()) return;
     await invoke("set_api_key", { apiKey: newKey.trim() });
@@ -81,6 +79,7 @@ export function SettingsModal({ open, onClose }: Props) {
 
   return (
     <AnimatePresence>
+      {open && (
       <div
         className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-3 pt-[10vh] backdrop-blur-sm"
         onClick={onClose}
@@ -251,6 +250,7 @@ export function SettingsModal({ open, onClose }: Props) {
           </div>
         </motion.div>
       </div>
+      )}
     </AnimatePresence>
   );
 }

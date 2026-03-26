@@ -52,7 +52,8 @@ pub async fn reset_enrichments(state: State<'_, AppState>) -> Result<u32, String
 
 #[tauri::command]
 pub async fn check_api_key(state: State<'_, AppState>) -> Result<bool, String> {
-    Ok(state.config.lock().unwrap().has_api_key())
+    let config = state.config.lock().map_err(|_| "config lock error".to_string())?;
+    Ok(config.has_api_key())
 }
 
 #[tauri::command]
@@ -62,7 +63,7 @@ pub async fn set_api_key(
     api_key: String,
 ) -> Result<bool, String> {
     {
-        let mut config = state.config.lock().unwrap();
+        let mut config = state.config.lock().map_err(|_| "config lock error".to_string())?;
         config.anthropic_api_key = Some(api_key.clone());
         config.save(&state.app_dir).map_err(|e| e.to_string())?;
     }
