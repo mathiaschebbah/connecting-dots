@@ -64,15 +64,19 @@ pub fn run() {
 
             let config = Arc::new(Mutex::new(config));
             let worker_handles = Arc::new(WorkerHandles::new());
+
+            // Only start workers if API key is configured (not first launch)
             let api_key = config.lock().unwrap().api_key().map(String::from);
-            workers::start_all(
-                db.clone(),
-                api_key,
-                app.handle().clone(),
-                &worker_handles,
-                Some(config.clone()),
-                Some(app_dir.clone()),
-            );
+            if api_key.is_some() {
+                workers::start_all(
+                    db.clone(),
+                    api_key,
+                    app.handle().clone(),
+                    &worker_handles,
+                    Some(config.clone()),
+                    Some(app_dir.clone()),
+                );
+            }
 
             app.manage(AppState {
                 db,
@@ -86,6 +90,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // X Account
+            commands::check_x_connection,
             commands::get_x_account,
             // Sync
             commands::sync_bookmarks,

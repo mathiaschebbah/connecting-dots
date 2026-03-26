@@ -16,6 +16,48 @@ pub struct BookmarksFetcher {
 }
 
 impl BookmarksFetcher {
+    /// Detect which browser has X cookies by checking known cookie DB paths.
+    pub fn detect_browser() -> Option<String> {
+        // Check browser cookie DB existence to determine which browser is likely the source
+        let home = dirs::home_dir()?;
+
+        #[cfg(target_os = "macos")]
+        let browsers = vec![
+            ("Brave", home.join("Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies")),
+            ("Chrome", home.join("Library/Application Support/Google/Chrome/Default/Cookies")),
+            ("Edge", home.join("Library/Application Support/Microsoft Edge/Default/Cookies")),
+            ("Firefox", home.join("Library/Application Support/Firefox/Profiles")),
+            ("Safari", home.join("Library/Cookies/Cookies.binarycookies")),
+        ];
+
+        #[cfg(target_os = "windows")]
+        let browsers = vec![
+            ("Brave", home.join("AppData/Local/BraveSoftware/Brave-Browser/User Data/Default/Cookies")),
+            ("Chrome", home.join("AppData/Local/Google/Chrome/User Data/Default/Cookies")),
+            ("Edge", home.join("AppData/Local/Microsoft/Edge/User Data/Default/Cookies")),
+            ("Firefox", home.join("AppData/Roaming/Mozilla/Firefox/Profiles")),
+        ];
+
+        #[cfg(target_os = "linux")]
+        let browsers = vec![
+            ("Brave", home.join(".config/BraveSoftware/Brave-Browser/Default/Cookies")),
+            ("Chrome", home.join(".config/google-chrome/Default/Cookies")),
+            ("Chromium", home.join(".config/chromium/Default/Cookies")),
+            ("Firefox", home.join(".mozilla/firefox")),
+        ];
+
+        // Try to load cookies — if from_browser succeeds, find which browser DB exists
+        if Self::from_browser().is_ok() {
+            for (name, path) in &browsers {
+                if path.exists() {
+                    return Some(name.to_string());
+                }
+            }
+            return Some("Navigateur".to_string());
+        }
+        None
+    }
+
     /// Extract Twitter/X auth credentials from the user's browser cookies.
     /// Tries all installed browsers (Chrome, Firefox, Edge, Brave, Safari, etc.)
     pub fn from_browser() -> Result<Self> {

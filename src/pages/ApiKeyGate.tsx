@@ -13,12 +13,24 @@ interface SyncEvent {
   detail: string | null;
 }
 
+interface XConnection {
+  connected: boolean;
+  browser: string | null;
+}
+
 export function ApiKeyGate({ onAuthenticated }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [xConnection, setXConnection] = useState<XConnection | null>(null);
+
+  useEffect(() => {
+    invoke<XConnection>("check_x_connection")
+      .then(setXConnection)
+      .catch(() => setXConnection({ connected: false, browser: null }));
+  }, []);
 
   useEffect(() => {
     if (!syncing) return;
@@ -29,7 +41,6 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
           setSyncStatus(e.detail);
           setTimeout(() => onAuthenticated(), 800);
         } else {
-          // Sync done but no new bookmarks or error — still proceed
           setTimeout(() => onAuthenticated(), 500);
         }
       }
@@ -71,53 +82,77 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
         </div>
 
         {!syncing ? (
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label
-                htmlFor="api-key"
-                className="block text-[13px] font-medium text-foreground"
-              >
-                Clé API Anthropic
-              </label>
-              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                Utilisée pour analyser et classer tes signets. La clé reste
-                stockée localement sur ta machine.
-              </p>
-              <input
-                id="api-key"
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-ant-..."
-                className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#1d9bf0]"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  invoke("open_in_browser", {
-                    url: "https://console.anthropic.com/settings/keys",
-                  })
-                }
-                className="mt-2 text-[12px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
-              >
-                Obtenir une clé sur console.anthropic.com
-              </button>
+          <div className="space-y-5">
+            {/* X Connection status */}
+            <div className="rounded-lg border border-border px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 rounded-full ${xConnection?.connected ? "bg-foreground" : "bg-muted-foreground"}`}
+                />
+                <span className="text-[13px] text-foreground">
+                  {xConnection === null
+                    ? "Recherche du compte X..."
+                    : xConnection.connected
+                      ? `Compte X trouvé${xConnection.browser ? ` (${xConnection.browser})` : ""}`
+                      : "Aucun compte X détecté"}
+                </span>
+              </div>
+              {xConnection && !xConnection.connected && (
+                <p className="mt-1.5 text-[12px] text-muted-foreground">
+                  Connecte-toi à x.com dans ton navigateur.
+                </p>
+              )}
             </div>
 
-            {error && (
-              <p className="text-[12px] text-red-400">{error}</p>
-            )}
+            {/* API Key */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="api-key"
+                  className="block text-[13px] font-medium text-foreground"
+                >
+                  Clé API Anthropic
+                </label>
+                <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                  Utilisée pour analyser et classer tes signets. La clé est
+                  stockée dans le trousseau sécurisé de ton système.
+                </p>
+                <input
+                  id="api-key"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-ant-..."
+                  className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-[#1d9bf0]"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    invoke("open_in_browser", {
+                      url: "https://console.anthropic.com/settings/keys",
+                    })
+                  }
+                  className="mt-2 text-[12px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
+                >
+                  Obtenir une clé sur console.anthropic.com
+                </button>
+              </div>
 
-            <button
-              type="submit"
-              disabled={loading || !apiKey.trim()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-foreground py-2.5 text-[14px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-30"
-            >
-              {loading && <Loader2 size={14} className="animate-spin" />}
-              Commencer
-            </button>
-          </form>
+              {error && (
+                <p className="text-[12px] text-red-400">{error}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || !apiKey.trim() || !xConnection?.connected}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-foreground py-2.5 text-[14px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-30"
+              >
+                {loading && <Loader2 size={14} className="animate-spin" />}
+                Commencer
+              </button>
+            </form>
+          </div>
         ) : (
           <div className="space-y-4">
             <div className="flex items-center gap-3">

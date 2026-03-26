@@ -28,7 +28,6 @@ impl AppConfig {
         let tmp_path = app_dir.join("config.json.tmp");
         let data = serde_json::to_string_pretty(self)?;
         std::fs::write(&tmp_path, &data)?;
-        // On Windows, rename fails if target exists — remove first
         let _ = std::fs::remove_file(&path);
         std::fs::rename(&tmp_path, &path)?;
         Ok(())
@@ -51,7 +50,6 @@ impl AppConfig {
     }
 
     pub fn estimated_cost_usd(&self) -> f64 {
-        // Claude Haiku 4.5 pricing: $0.80/MTok input, $4/MTok output
         let input_cost = self.api_usage_input_tokens as f64 * 0.80 / 1_000_000.0;
         let output_cost = self.api_usage_output_tokens as f64 * 4.0 / 1_000_000.0;
         input_cost + output_cost

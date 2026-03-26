@@ -11,6 +11,27 @@ pub struct SyncResult {
     pub total_tweets: u32,
 }
 
+// ── X Connection ──
+
+#[derive(Debug, Serialize, Clone)]
+pub struct XConnection {
+    pub connected: bool,
+    pub browser: Option<String>,
+}
+
+#[tauri::command]
+pub async fn check_x_connection() -> Result<XConnection, String> {
+    tokio::task::spawn_blocking(|| {
+        let browser = BookmarksFetcher::detect_browser();
+        Ok(XConnection {
+            connected: browser.is_some(),
+            browser,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ── X Account ──
 
 #[tauri::command]
