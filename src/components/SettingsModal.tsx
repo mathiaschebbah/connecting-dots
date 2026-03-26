@@ -221,7 +221,7 @@ export function SettingsModal({ open, onClose }: Props) {
               </div>
 
               {/* API Usage */}
-              {apiUsage && apiUsage.estimated_cost_usd > 0 && (
+              {apiUsage && hasKey && (
                 <div className="px-5 py-4">
                   <div className="text-[12px] font-medium text-muted-foreground">Consommation API</div>
                   <div className="mt-2 space-y-1 text-[13px] text-foreground/80">

@@ -34,14 +34,18 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
       .catch(() => setXConnected(false));
   }, []);
 
-  // Listen for webview login success
+  // Listen for webview login events
   useEffect(() => {
-    const unlisten = listen("x-login-success", () => {
+    const unlistenSuccess = listen("x-login-success", () => {
       setXConnected(true);
       setXLoggingIn(false);
     });
+    const unlistenClosed = listen("x-login-closed", () => {
+      setXLoggingIn(false);
+    });
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenSuccess.then((fn) => fn());
+      unlistenClosed.then((fn) => fn());
     };
   }, []);
 
@@ -93,7 +97,11 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
   };
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-background">
+    <div
+      className={`flex h-screen bg-background transition-all duration-300 ${
+        xLoggingIn ? "w-[50vw] items-center justify-center" : "w-screen items-center justify-center"
+      }`}
+    >
       <div className="w-full max-w-[380px] px-6">
         <div className="mb-8">
           <h1 className="text-[22px] font-bold tracking-tight text-foreground">
