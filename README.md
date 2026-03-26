@@ -21,15 +21,20 @@
 
 ---
 
-Connecting Dots syncs your X/Twitter bookmarks and uses Claude AI to sort them into **dots** — focused topic clusters like `rust-async`, `llm-agents`, or `figma-tips`. It learns from your corrections over time, so classification keeps getting better.
+Connecting Dots syncs your X/Twitter bookmarks and uses Claude AI to sort them into **dots** — focused topic clusters like `llm-agents`, `rag`, or `claude-code`. It learns from your corrections over time, so classification keeps getting better.
+
+<p align="center">
+  <img src="docs/screenshot.png" width="800" alt="Connecting Dots screenshot">
+</p>
 
 ## Features
 
-- **Automatic bookmark sync** — log in to X directly in the app, no browser dependency or token to paste
+- **In-app X login** — log in to X directly in the app, no browser dependency or token to paste
 - **AI-powered classification** — Claude groups bookmarks into fine-grained thematic dots with summaries and tags
+- **Built-in browser** — browse X directly in the app, bookmarks are classified on the fly
 - **Adaptive learning** — when you move a bookmark to a different dot, the app records the correction and adjusts future classification
 - **Full-text search** — find any bookmark by content, author, or topic
-- **Desktop app** — native macOS, Windows, and Linux app built with Tauri
+- **100% local** — everything runs on your machine, nothing leaves your computer except API calls to Anthropic
 
 ## Requirements
 
@@ -45,6 +50,8 @@ Grab the latest installer for your platform from the [Releases](https://github.c
 | macOS    | `.dmg` |
 | Windows  | `.exe` (NSIS installer) |
 | Linux    | `.deb`, `.AppImage` |
+
+> **Note:** The app is not code-signed. On macOS, run `xattr -cr "/Applications/Connecting Dots.app"` after installing. On Windows, click "More info" then "Run anyway" on the SmartScreen prompt.
 
 ## Development
 
