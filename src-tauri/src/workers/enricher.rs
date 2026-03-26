@@ -101,7 +101,7 @@ pub async fn enrich_loop_with_events(db: Arc<Database>, api_key: String, app_han
                 worker: "enricher".to_string(),
                 status: "done".to_string(),
                 detail: if total_count > 0 {
-                    Some(format!("+{} enriched", total_count))
+                    Some(format!("{} signets classés en dots", total_count))
                 } else {
                     None
                 },

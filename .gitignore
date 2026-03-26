@@ -31,4 +31,4 @@ src-tauri/gen/
 src-tauri/.fastembed_cache/
 
 SPEC.md
-CONCEPT.md
+CONCEPT.md.fastembed_cache/

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "./stores/appStore";
 import { CortexBar } from "./components/CortexBar";
 import { SettingsModal } from "./components/SettingsModal";
+import { Toasts } from "./components/Toasts";
 import { ApiKeyGate } from "./pages/ApiKeyGate";
 import { DotsGrid } from "./pages/DotsGrid";
 import { DotDetail } from "./pages/DotDetail";
@@ -63,6 +64,7 @@ function App() {
         {content}
       </main>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Toasts />
     </div>
   );
 }

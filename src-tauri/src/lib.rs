@@ -39,7 +39,9 @@ pub fn run() {
                     .app_data_dir()
                     .expect("failed to resolve app data dir")
                     .join("dev-sandbox");
-                log::info!("DEV MODE: using sandbox at {:?}", dir);
+                // Clean previous sandbox on startup (kill doesn't trigger Exit event)
+                let _ = std::fs::remove_dir_all(&dir);
+                log::info!("DEV MODE: fresh sandbox at {:?}", dir);
                 dir
             } else {
                 app

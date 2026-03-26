@@ -17,6 +17,12 @@ interface DashboardStats {
   confusion_pairs: ConfusionPair[];
 }
 
+interface XAccount {
+  handle: string;
+  name: string;
+  avatar_url: string | null;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -30,11 +36,13 @@ export function SettingsModal({ open, onClose }: Props) {
   const [syncingAction, setSyncingAction] = useState<"bookmarks" | "reenrich" | null>(null);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [xAccount, setXAccount] = useState<XAccount | null>(null);
 
   useEffect(() => {
     if (open) {
       invoke<boolean>("check_api_key").then(setHasKey).catch(() => setHasKey(false));
       invoke<DashboardStats>("get_dashboard_stats").then(setStats).catch(() => setStats(null));
+      invoke<XAccount>("get_x_account").then((a) => { console.log("x_account:", a); setXAccount(a); }).catch((e) => { console.error("get_x_account failed:", e); setXAccount(null); });
     }
   }, [open]);
 
@@ -108,6 +116,27 @@ export function SettingsModal({ open, onClose }: Props) {
 
           <div className="flex-1 overflow-y-auto">
             <div className="divide-y divide-border">
+              {/* X Account */}
+              <div className="px-5 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] font-medium text-foreground">
+                      Compte X
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                      {xAccount ? (
+                        <>
+                          <span className="h-2 w-2 rounded-full bg-foreground" />
+                          <span>Connecté</span>
+                        </>
+                      ) : (
+                        <span>Vérification...</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* API Key */}
               <div className="px-5 py-4">
                 <div className="flex items-center justify-between gap-3">
