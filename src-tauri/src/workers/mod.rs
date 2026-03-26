@@ -49,10 +49,12 @@ pub fn start_all(
     // Bookmarks polling (~300s)
     {
         let handle = app_handle.clone();
+        let cfg = config.clone();
         new_handles.push(tauri::async_runtime::spawn(poller::poll_loop_with_events(
             db.clone(),
             poller::PollConfig { interval_secs: 300 },
             handle,
+            cfg,
         )));
     }
 
@@ -69,8 +71,9 @@ pub fn start_all(
     // Link resolver (~30s)
     {
         let handle = app_handle.clone();
+        let cfg = config.clone();
         new_handles.push(tauri::async_runtime::spawn(
-            link_resolver::resolve_loop_with_events(db.clone(), handle),
+            link_resolver::resolve_loop_with_events(db.clone(), handle, cfg),
         ));
     }
 

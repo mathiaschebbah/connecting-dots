@@ -1,7 +1,8 @@
+use crate::config::AppConfig;
 use crate::db::Database;
 use crate::twitter::bookmarks_fetcher::BookmarksFetcher;
 use crate::workers::SyncEvent;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
@@ -14,6 +15,7 @@ pub async fn poll_loop_with_events(
     db: Arc<Database>,
     config: PollConfig,
     app_handle: AppHandle,
+    app_config: Option<Arc<Mutex<AppConfig>>>,
 ) {
     log::info!(
         "Worker started: poll bookmarks every {}s",
@@ -30,7 +32,7 @@ pub async fn poll_loop_with_events(
             },
         );
 
-        match poll_bookmarks(&db).await {
+        match poll_bookmarks(&db, &app_config).await {
             Ok(new) => {
                 let detail = if new > 0 {
                     log::info!("[bookmarks] +{} tweets", new);
@@ -64,9 +66,18 @@ pub async fn poll_loop_with_events(
     }
 }
 
-async fn poll_bookmarks(db: &Database) -> anyhow::Result<u32> {
-    let tweets = tokio::task::spawn_blocking(|| {
-        let fetcher = BookmarksFetcher::from_browser()?;
+async fn poll_bookmarks(
+    db: &Database,
+    app_config: &Option<Arc<Mutex<AppConfig>>>,
+) -> anyhow::Result<u32> {
+    let stored = app_config
+        .as_ref()
+        .and_then(|c| c.lock().ok())
+        .and_then(|c| c.x_cookies.clone());
+
+    let tweets = tokio::task::spawn_blocking(move || {
+        let cookies = stored.ok_or_else(|| anyhow::anyhow!("No stored X cookies"))?;
+        let fetcher = BookmarksFetcher::new(cookies.ct0, cookies.cookies_str);
         fetcher.fetch_all(50)
     })
     .await??;

@@ -92,6 +92,7 @@ pub fn run() {
             // X Account
             commands::check_x_connection,
             commands::get_x_account,
+            commands::open_x_login,
             // Sync
             commands::sync_bookmarks,
             // Tweets

@@ -24,14 +24,28 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  const [xConnection, setXConnection] = useState<XConnection | null>(null);
+  const [xConnected, setXConnected] = useState<boolean | null>(null);
+  const [xLoggingIn, setXLoggingIn] = useState(false);
 
+  // Check if already connected (stored cookies or browser)
   useEffect(() => {
     invoke<XConnection>("check_x_connection")
-      .then(setXConnection)
-      .catch(() => setXConnection({ connected: false, browser: null }));
+      .then((r) => setXConnected(r.connected))
+      .catch(() => setXConnected(false));
   }, []);
 
+  // Listen for webview login success
+  useEffect(() => {
+    const unlisten = listen("x-login-success", () => {
+      setXConnected(true);
+      setXLoggingIn(false);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // Listen for sync events
   useEffect(() => {
     if (!syncing) return;
     const unlisten = listen<SyncEvent>("sync:event", (event) => {
@@ -52,6 +66,16 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
       unlisten.then((fn) => fn());
     };
   }, [syncing, onAuthenticated]);
+
+  const handleXLogin = async () => {
+    setXLoggingIn(true);
+    try {
+      await invoke("open_x_login");
+    } catch (err) {
+      setError(String(err));
+      setXLoggingIn(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,24 +107,38 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
 
         {!syncing ? (
           <div className="space-y-5">
-            {/* X Connection status */}
+            {/* X Connection */}
             <div className="rounded-lg border border-border px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`h-2 w-2 rounded-full ${xConnection?.connected ? "bg-foreground" : "bg-muted-foreground"}`}
-                />
-                <span className="text-[13px] text-foreground">
-                  {xConnection === null
-                    ? "Recherche du compte X..."
-                    : xConnection.connected
-                      ? `Compte X trouvé${xConnection.browser ? ` (${xConnection.browser})` : ""}`
-                      : "Aucun compte X détecté"}
-                </span>
-              </div>
-              {xConnection && !xConnection.connected && (
-                <p className="mt-1.5 text-[12px] text-muted-foreground">
-                  Connecte-toi à x.com dans ton navigateur.
-                </p>
+              {xConnected ? (
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-foreground" />
+                  <span className="text-[13px] text-foreground">
+                    Connecté à X
+                  </span>
+                </div>
+              ) : (
+                <div>
+                  <button
+                    type="button"
+                    onClick={handleXLogin}
+                    disabled={xLoggingIn || xConnected === null}
+                    className="flex w-full items-center justify-center gap-2 rounded-md bg-foreground px-3 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {(xLoggingIn || xConnected === null) && (
+                      <Loader2 size={13} className="animate-spin" />
+                    )}
+                    {xConnected === null
+                      ? "Vérification..."
+                      : xLoggingIn
+                        ? "Connexion en cours..."
+                        : "Se connecter à X"}
+                  </button>
+                  {!xLoggingIn && xConnected === false && (
+                    <p className="mt-2 text-center text-[12px] text-muted-foreground">
+                      Une fenêtre s'ouvrira pour te connecter à ton compte X.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
 
@@ -114,8 +152,7 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
                   Clé API Anthropic
                 </label>
                 <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                  Utilisée pour analyser et classer tes signets. La clé est
-                  stockée dans le trousseau sécurisé de ton système.
+                  Utilisée pour analyser et classer tes signets.
                 </p>
                 <input
                   id="api-key"
@@ -145,7 +182,7 @@ export function ApiKeyGate({ onAuthenticated }: Props) {
 
               <button
                 type="submit"
-                disabled={loading || !apiKey.trim() || !xConnection?.connected}
+                disabled={loading || !apiKey.trim() || !xConnected}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-foreground py-2.5 text-[14px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-30"
               >
                 {loading && <Loader2 size={14} className="animate-spin" />}

@@ -1,8 +1,9 @@
+use crate::config::AppConfig;
 use crate::db::Database;
 use crate::twitter::bookmarks_fetcher::BookmarksFetcher;
 use crate::twitter::types::TweetDetail;
 use crate::workers::SyncEvent;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
@@ -83,7 +84,11 @@ async fn resolve_tco_redirect(url: &str) -> Option<String> {
     None
 }
 
-pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) {
+pub async fn resolve_loop_with_events(
+    db: Arc<Database>,
+    app_handle: AppHandle,
+    app_config: Option<Arc<Mutex<AppConfig>>>,
+) {
     log::info!(
         "Worker started: link resolver every {}s",
         RESOLVE_INTERVAL_SECS
@@ -103,7 +108,7 @@ pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) 
             },
         );
 
-        match resolve_batch(&db).await {
+        match resolve_batch(&db, &app_config).await {
             Ok(count) => {
                 backoff_secs = RESOLVE_INTERVAL_SECS; // reset backoff on success
                 if count > 0 {
@@ -143,7 +148,10 @@ pub async fn resolve_loop_with_events(db: Arc<Database>, app_handle: AppHandle) 
     }
 }
 
-async fn resolve_batch(db: &Database) -> anyhow::Result<u32> {
+async fn resolve_batch(
+    db: &Database,
+    app_config: &Option<Arc<Mutex<AppConfig>>>,
+) -> anyhow::Result<u32> {
     let pending = db.tweets_with_unresolved_links(BATCH_SIZE)?;
     if pending.is_empty() {
         return Ok(0);
@@ -168,8 +176,13 @@ async fn resolve_batch(db: &Database) -> anyhow::Result<u32> {
     // Phase 2: Fetch tweet details sequentially (rate-limit friendly)
     let mut count = 0u32;
 
+    let stored = app_config
+        .as_ref()
+        .and_then(|c| c.lock().ok())
+        .and_then(|c| c.x_cookies.clone());
+
     for (tweet_id, resolved_url) in resolved_urls {
-        match resolve_one(&tweet_id, &resolved_url).await {
+        match resolve_one(&tweet_id, &resolved_url, &stored).await {
             Ok(Some((resolved_text, author, url, upsert_tweet))) => {
                 db.store_resolved_content(&tweet_id, &resolved_text, author.as_deref(), &url)?;
                 if let Some(tweet) = upsert_tweet {
@@ -189,15 +202,18 @@ async fn resolve_batch(db: &Database) -> anyhow::Result<u32> {
 async fn resolve_one(
     tweet_id: &str,
     resolved_url: &str,
+    stored: &Option<crate::config::StoredCookies>,
 ) -> anyhow::Result<Option<(String, Option<String>, String, Option<crate::twitter::types::Tweet>)>>
 {
     // Try native tweet_detail first
     let detail_id = extract_tweet_id(resolved_url).unwrap_or_else(|| tweet_id.to_string());
     let detail_id2 = detail_id.clone();
+    let cookies = stored.clone();
 
     let detail_result: Result<TweetDetail, _> =
         tokio::task::spawn_blocking(move || {
-            let fetcher = BookmarksFetcher::from_browser()?;
+            let cookies = cookies.ok_or_else(|| anyhow::anyhow!("No stored X cookies"))?;
+            let fetcher = BookmarksFetcher::new(cookies.ct0, cookies.cookies_str);
             fetcher.fetch_tweet_detail(&detail_id2)
         })
         .await?;

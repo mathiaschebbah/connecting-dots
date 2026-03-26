@@ -20,24 +20,31 @@ pub struct XConnection {
 }
 
 #[tauri::command]
-pub async fn check_x_connection() -> Result<XConnection, String> {
-    tokio::task::spawn_blocking(|| {
-        let browser = BookmarksFetcher::detect_browser();
-        Ok(XConnection {
-            connected: browser.is_some(),
-            browser,
-        })
+pub async fn check_x_connection(state: State<'_, AppState>) -> Result<XConnection, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "config lock error".to_string())?;
+    Ok(XConnection {
+        connected: config.x_cookies.is_some(),
+        browser: None,
     })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
 // ── X Account ──
 
 #[tauri::command]
-pub async fn get_x_account() -> Result<crate::twitter::types::XAccount, String> {
-    tokio::task::spawn_blocking(|| -> Result<crate::twitter::types::XAccount, String> {
-        let fetcher = BookmarksFetcher::from_browser().map_err(|e| e.to_string())?;
+pub async fn get_x_account(state: State<'_, AppState>) -> Result<crate::twitter::types::XAccount, String> {
+    let stored = state
+        .config
+        .lock()
+        .map_err(|_| "config lock error".to_string())?
+        .x_cookies
+        .clone();
+
+    tokio::task::spawn_blocking(move || -> Result<crate::twitter::types::XAccount, String> {
+        let cookies = stored.ok_or("Non connecté à X. Connecte-toi via l'app.")?;
+        let fetcher = BookmarksFetcher::new(cookies.ct0, cookies.cookies_str);
         let _user_id = fetcher.viewer_user_id().map_err(|e| e.to_string())?;
         Ok(crate::twitter::types::XAccount {
             handle: "connected".to_string(),
@@ -53,7 +60,15 @@ pub async fn get_x_account() -> Result<crate::twitter::types::XAccount, String> 
 
 #[tauri::command]
 pub async fn sync_bookmarks(state: State<'_, AppState>) -> Result<SyncResult, String> {
-    let fetcher = BookmarksFetcher::from_browser().map_err(|e| e.to_string())?;
+    let stored = state
+        .config
+        .lock()
+        .map_err(|_| "config lock error".to_string())?
+        .x_cookies
+        .clone();
+
+    let cookies = stored.ok_or("Non connecté à X. Connecte-toi via l'app.")?;
+    let fetcher = BookmarksFetcher::new(cookies.ct0, cookies.cookies_str);
     let tweets = fetcher.fetch_all(50).map_err(|e| e.to_string())?;
     let new_tweets = state
         .db
@@ -263,6 +278,97 @@ pub async fn backfill_dots(state: State<'_, AppState>) -> Result<u32, String> {
 #[tauri::command]
 pub async fn get_dashboard_stats(state: State<'_, AppState>) -> Result<DashboardStats, String> {
     state.db.get_dashboard_stats().map_err(|e| e.to_string())
+}
+
+// ── X Login via webview ──
+
+#[tauri::command]
+pub async fn open_x_login(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    use tauri::webview::WebviewWindowBuilder;
+    use tauri::{Emitter, Manager, WebviewUrl};
+
+    // If window already exists, focus it
+    if let Some(existing) = app.get_webview_window("x-login") {
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(
+        &app,
+        "x-login",
+        WebviewUrl::External("https://x.com/i/flow/login".parse().unwrap()),
+    )
+    .title("Se connecter à X")
+    .inner_size(460.0, 700.0)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    // Poll for auth cookies in background
+    let app_handle = app.clone();
+    let config = state.config.clone();
+    let app_dir = state.app_dir.clone();
+
+    tauri::async_runtime::spawn(async move {
+        use tokio::time::{interval, Duration};
+        let mut ticker = interval(Duration::from_secs(2));
+        let x_url: url::Url = "https://x.com".parse().unwrap();
+
+        loop {
+            ticker.tick().await;
+
+            let window = match app_handle.get_webview_window("x-login") {
+                Some(w) => w,
+                None => break,
+            };
+
+            match window.cookies_for_url(x_url.clone()) {
+                Ok(cookies) => {
+                    let has_ct0 = cookies.iter().any(|c| c.name() == "ct0");
+                    let has_auth = cookies
+                        .iter()
+                        .any(|c| c.name() == "auth_token" || c.name() == "twid");
+
+                    if has_ct0 && has_auth {
+                        let ct0 = cookies
+                            .iter()
+                            .find(|c| c.name() == "ct0")
+                            .unwrap()
+                            .value()
+                            .to_string();
+
+                        let cookies_str = cookies
+                            .iter()
+                            .map(|c| format!("{}={}", c.name(), c.value()))
+                            .collect::<Vec<_>>()
+                            .join("; ");
+
+                        log::info!(
+                            "X login successful, extracted {} cookies",
+                            cookies.len()
+                        );
+
+                        // Save to config
+                        {
+                            let mut cfg = config.lock().unwrap();
+                            cfg.x_cookies =
+                                Some(crate::config::StoredCookies { ct0, cookies_str });
+                            let _ = cfg.save(&app_dir);
+                        }
+
+                        let _ = app_handle.emit("x-login-success", ());
+                        let _ = window.close();
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Cookie poll error: {}", e);
+                }
+            }
+        }
+    });
+
+    Ok(())
 }
 
 // ── Tweet webview ──

@@ -2,9 +2,17 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StoredCookies {
+    pub ct0: String,
+    pub cookies_str: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct AppConfig {
     pub anthropic_api_key: Option<String>,
+    #[serde(default)]
+    pub x_cookies: Option<StoredCookies>,
     #[serde(default)]
     pub api_usage_input_tokens: u64,
     #[serde(default)]

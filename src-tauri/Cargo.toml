@@ -46,7 +46,6 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "6.0"
 open = "5"
 url = "2"
-rookie = "0.5.6"
 regex-lite = "0.1"
 sha2 = "0.10"
 base64 = "0.22"

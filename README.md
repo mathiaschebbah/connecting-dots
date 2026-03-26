@@ -25,7 +25,7 @@ Connecting Dots syncs your X/Twitter bookmarks and uses Claude AI to sort them i
 
 ## Features
 
-- **Automatic bookmark sync** — reads your browser cookies to fetch bookmarks directly from X, no login or token to paste
+- **Automatic bookmark sync** — log in to X directly in the app, no browser dependency or token to paste
 - **AI-powered classification** — Claude groups bookmarks into fine-grained thematic dots with summaries and tags
 - **Adaptive learning** — when you move a bookmark to a different dot, the app records the correction and adjusts future classification
 - **Full-text search** — find any bookmark by content, author, or topic
@@ -33,7 +33,7 @@ Connecting Dots syncs your X/Twitter bookmarks and uses Claude AI to sort them i
 
 ## Requirements
 
-- A browser (Chrome, Firefox, Edge, Brave, or Safari) logged into X/Twitter
+- An X/Twitter account
 - An [Anthropic API key](https://console.anthropic.com/)
 
 ## Download
